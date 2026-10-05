@@ -2,6 +2,9 @@ node_modules/
 dist/
 *.log
 
+# local sqlite data for `pnpm dev` (the Dockerfile uses /data instead)
+.data/
+
 # editor and OS junk
 .DS_Store
 ._*

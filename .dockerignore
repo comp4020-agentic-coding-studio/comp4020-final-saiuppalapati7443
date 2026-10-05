@@ -11,3 +11,12 @@ dist
 mise.local.toml
 *.pem
 .claude
+
+# the test harness and process evidence never need to reach the builder
+spec/
+reflections/
+docs/adr/
+PROCESS.md
+
+# local sqlite data (see src/db.ts's DATA_DIR fallback)
+.data/
