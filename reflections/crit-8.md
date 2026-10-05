@@ -2,25 +2,28 @@
 
 1. What was the breakthrough that moved the work forward?
 
-    The breakthrough was watching a test fail on purpose. Until this week a
-    green check meant "done" to me. When a WebSocket test I'd written started
-    timing out — a message had already arrived and been silently dropped
-    before anything was listening for it — I saw that a test I'd never seen
-    fail was only a claim, not a guarantee. After that I read the spec
-    differently: not as a box to tick, but as the README's promises in a form
-    a machine can hold me to. The same idea caught the markdown bug: a line
-    backticked specifically so it would stay literal text was quietly being
-    re-rendered into a nested image, and only reading the actual output, not
-    trusting that the code looked right, caught it.
+    The breakthrough was the WebSocket test race. A test started hanging and
+    I didn't know why — I just saw it stuck and asked the agent to find out.
+    It turned out the app was fine; the test was wrong. The harness attached
+    its message listener only after the connection had already opened, and
+    Node's `EventEmitter` doesn't queue an event for a listener that isn't
+    registered yet — so the first message, often the initial state push,
+    arrived and was dropped before anything was listening, and the test hung
+    waiting for a message that had already come and gone. Instead of
+    retrying until it passed, we gave every test connection a message queue
+    from the moment it opens, and wrote the rule into CLAUDE.md: anything
+    that awaits before it starts listening to a socket needs a queue, not a
+    one-shot listener. That changed how I read a green check — it only means
+    something once I understand why it would have gone red.
 
 2. What did this work change about who I want to be as a software developer?
 
-    I leaned on the agent heavily this week, under a deadline, and most of
-    the code isn't mine. What stayed mine was deciding what "good" means,
-    what not to build, and whether each claim actually held up against the
-    running app. That turned out to be the harder part, and the part I want
-    to get better at. I also noticed the difference between fixing a bug and
-    writing a rule. Two things went wrong, and both ended up in CLAUDE.md, so
-    the next session can't make the same mistake. I want to be the developer
-    who writes the rule, not the one who fixes the same thing twice. Next
-    time I'll decide the idea before I open the agent.
+    Honestly, the agent wrote most of the code this week. What was mine was
+    directing it, reading what it produced, and checking that against the
+    brief — deciding what the app is actually for, and noticing when
+    something didn't match. I learned I also have to check what the agent
+    writes about my own process, not just the code: a draft of this
+    reflection described a UTC day boundary and a stone preview bug, events
+    from some other project, and it had to be caught and rewritten using
+    this repo's real history instead. Next time I want to understand a
+    failure myself before I hand it to the agent.
