@@ -19,9 +19,11 @@ broadcast, cross-session persistence, and rejection of malformed input are all
 exercised over the actual `/ws` protocol, not mocked. Whether the *interaction*
 is actually good — whether dropping a stone feels satisfying, whether watching
 someone else's stone land reads as "someone's here" rather than as a
-notification — isn't something a test can decide. I judged that by using it
-myself from two browser windows side by side and asking whether I noticed the
-other one without it announcing itself.
+notification, whether keeping a carried stone private instead of broadcasting
+it live ever reads as a quiet page instead of a shared one — isn't something a
+test can decide. I judged that by using it myself from two browser windows
+side by side and asking whether I noticed the other one without it announcing
+itself.
 
 ## What I read while deciding
 
@@ -45,12 +47,16 @@ Dourish & Bellotti's *Awareness and Coordination in Shared Workspaces* (CSCW
 found that awareness picked up passively through a shared object — rather than
 announced separately from it — lets people move fluidly between paying close
 attention and barely noticing each other. A colored stone landing *is* the
-presence signal here; see `docs/adr/0002-visitor-identity.md`.
+presence signal here — carrying one toward the pile stays on your own screen,
+so the only thing anyone else sees is a stone actually placed, not a change of
+mind about one; see `docs/adr/0002-visitor-identity.md` and
+`docs/adr/0003-carry-stays-local.md`.
 
 ## What I chose not to build
 
 No moderation, no way to remove a stone, no multiple rooms, no cap on how
-large the pile can grow, no chosen names. Each is a real, small feature; none
+large the pile can grow, no chosen names, no visible cursors or in-progress
+drags. Each is a real, small feature; none
 of them were needed to make the three required properties true, and each would
 have added a decision — who moderates, what happens once the pile is "too big"
 — that nothing here asked me to make yet. `docs/adr/` has the reasoning behind
