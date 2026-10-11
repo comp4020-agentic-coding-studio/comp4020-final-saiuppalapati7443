@@ -76,6 +76,12 @@ sessions, is a completed drop.
   to be the common case rather than the exception, the passive signal would
   never fire for those sessions and the cost above would stop being
   theoretical.
+- Whether that lull is actually felt — whether a quiet pile reads as "no one
+  else is here" rather than just as a pile that hasn't grown yet — isn't
+  something `spec/` can check; only `spec/cairn.test.ts`'s claim that a carry
+  message never gets broadcast is. The feeling is judged the same way
+  README.md already judges "someone's here": two browser windows side by
+  side. README.md's checked/judged split now names this explicitly.
 
 ## The case for the option we didn't pick
 
