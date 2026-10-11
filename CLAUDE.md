@@ -65,3 +65,15 @@ work today.
   connection a message queue from the moment it opens, with `nextMessage()`
   reading from that queue first. Rule: anything that `await`s before it starts
   listening to a socket needs a queue, not a one-shot listener.
+- **A spec test timed out against the deployed app, not against localhost.**
+  `spec/cairn.test.ts`'s reconnect test opens three WebSocket connections
+  sequentially (one, then another, then a reconnect). Run with
+  `APP_URL=http://localhost:8080` that's fast enough to finish well inside
+  vitest's 5000ms default, but pointed at the live `https://...fly.dev` deploy
+  instead, three sequential real TLS handshakes to a machine in `syd` pushed it
+  past 5000ms — every assertion inside still passed once given more time.
+  Fixed with a longer explicit timeout on that one test, not a retry or a
+  rewrite of the behaviour it checks. Rule: a timeout failure that only
+  appears against a deployed `APP_URL` is evidence the budget was sized for
+  localhost, not evidence the app is broken — confirm the assertions actually
+  pass with more time before touching the code under test.

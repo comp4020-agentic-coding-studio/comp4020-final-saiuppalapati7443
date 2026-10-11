@@ -171,6 +171,13 @@ it("keeps five simultaneous sessions consistent, including two dropping at once"
 // read whatever the ordinary initial "state" push contains — actually shows
 // everything that landed while it was gone. No reload, no special
 // reconnect-only message type.
+//
+// Three WebSocket connects happen sequentially here (a, then b, then the
+// reconnect), each a real TLS handshake once this runs against a deployed
+// APP_URL rather than localhost — that alone took ~5s against the live Fly
+// deployment and tripped vitest's 5000ms default, with every assertion inside
+// still passing. An explicit timeout, not a tighter retry, is the fix: the
+// behaviour was never slow, the default budget was just sized for localhost.
 it("catches up on reconnect after a dropped connection, without a reload", async () => {
   const a = await connect();
   await nextMessage(a);
@@ -198,7 +205,7 @@ it("catches up on reconnect after a dropped connection, without a reload", async
 
   b.ws.close();
   reconnected.ws.close();
-});
+}, 15000);
 
 it("shows a freshly opened session every stone dropped before it connected", async () => {
   const first = await connect();
