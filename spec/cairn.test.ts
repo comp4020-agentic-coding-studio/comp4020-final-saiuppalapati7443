@@ -130,6 +130,76 @@ it("never broadcasts a carry/in-progress drag, only a completed drop (ADR 0003)"
   b.ws.close();
 });
 
+// Five sessions, two of them dropping at the same instant (no await between
+// the two sends), all converging on the same two new stones in whatever order
+// they arrive in. Listeners are attached on every session before either send,
+// same rule as above.
+it("keeps five simultaneous sessions consistent, including two dropping at once", async () => {
+  const sessions = await Promise.all(Array.from({ length: 5 }, () => connect()));
+  await Promise.all(sessions.map((session) => nextMessage(session)));
+
+  const waits = sessions.map((session) => Promise.all([nextMessage(session), nextMessage(session)]));
+  sessions[0].ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.2 }));
+  sessions[1].ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.8 }));
+
+  const perSession = await Promise.all(waits);
+  const idsPerSession = perSession.map((pair) =>
+    pair
+      .filter((message): message is StoneMessage => message.type === "stone")
+      .map((message) => message.stone.id)
+      .sort((a, b) => a - b),
+  );
+
+  const [expectedIds, ...rest] = idsPerSession;
+  expect(expectedIds).toHaveLength(2);
+  for (const ids of rest) expect(ids).toEqual(expectedIds);
+
+  // A sixth, brand-new session must land on the same state too, not just the
+  // five that were already open when the two drops happened.
+  const sixth = await connect();
+  const state = await nextMessage(sixth);
+  if (state.type !== "state") throw new Error("expected initial state");
+  const stateIds = state.stones.map((stone) => stone.id);
+  for (const id of expectedIds) expect(stateIds).toContain(id);
+
+  for (const session of [...sessions, sixth]) session.ws.close();
+});
+
+// Simulates a visitor's connection dropping (network loss, laptop sleeping,
+// a tab backgrounded long enough to be killed) and confirms the same recovery
+// path client.js already uses on its own `ws` "close" event — reconnect, then
+// read whatever the ordinary initial "state" push contains — actually shows
+// everything that landed while it was gone. No reload, no special
+// reconnect-only message type.
+it("catches up on reconnect after a dropped connection, without a reload", async () => {
+  const a = await connect();
+  await nextMessage(a);
+  const b = await connect();
+  await nextMessage(b);
+
+  const aClosed = new Promise((resolve) => a.ws.once("close", resolve));
+  a.ws.close();
+  await aClosed;
+
+  const missed = Promise.all([nextMessage(b), nextMessage(b)]);
+  b.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.15 }));
+  b.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.85 }));
+  const missedMessages = await missed;
+  const missedIds = missedMessages
+    .filter((message): message is StoneMessage => message.type === "stone")
+    .map((message) => message.stone.id);
+  expect(missedIds).toHaveLength(2);
+
+  const reconnected = await connect();
+  const state = await nextMessage(reconnected);
+  if (state.type !== "state") throw new Error("expected initial state");
+  const stateIds = state.stones.map((stone) => stone.id);
+  for (const id of missedIds) expect(stateIds).toContain(id);
+
+  b.ws.close();
+  reconnected.ws.close();
+});
+
 it("shows a freshly opened session every stone dropped before it connected", async () => {
   const first = await connect();
   await nextMessage(first);
