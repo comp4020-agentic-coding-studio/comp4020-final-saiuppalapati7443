@@ -74,6 +74,33 @@ it("broadcasts a dropped stone to every other open session within about a second
   b.ws.close();
 });
 
+// Dropping a stone is the only action in Cairn that changes shared state
+// (carrying a stone is local-only drag feedback, never sent over /ws — see
+// ADR 0002, presence is passive via landed stones, not a cursor broadcast).
+// This measures that the one state-changing action actually lands elsewhere
+// within the second the brief and README promise, rather than just resolving
+// eventually. The listener is attached (nextMessage(b) called) before a's
+// send, so this can't fall into the crit-8 race of missing a message that
+// arrived before anything was listening for it.
+it("delivers a dropped stone to another open session within 1000ms", async () => {
+  const a = await connect();
+  const b = await connect();
+  await nextMessage(a);
+  await nextMessage(b);
+
+  const incoming = nextMessage(b);
+  const start = performance.now();
+  a.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.55 }));
+
+  const message = await incoming;
+  const elapsed = performance.now() - start;
+  expect(message.type).toBe("stone");
+  expect(elapsed).toBeLessThan(1000);
+
+  a.ws.close();
+  b.ws.close();
+});
+
 it("shows a freshly opened session every stone dropped before it connected", async () => {
   const first = await connect();
   await nextMessage(first);
