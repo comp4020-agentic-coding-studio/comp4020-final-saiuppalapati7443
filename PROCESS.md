@@ -1,124 +1,122 @@
 # Process overview
 
-This describes the project as it stands at the week 9 crit ("It's alive!").
-It gets rewritten, not appended to, at weeks 10 and 11; the `/ship` tags keep
-each version.
+This describes Cairn as it stands at the week 10 crit ("All at once"). Like
+last week, it's rewritten, not appended to; the `/ship` tags keep each
+version.
 
 ## Where it stands
 
 Cairn is deployed at
 [comp4020-final-saiuppalapati7443.fly.dev](https://comp4020-final-saiuppalapati7443.fly.dev).
-It does the core thing for a stranger: arrive, carry a stone, let it go, watch
-it settle — for you, and for anyone else with the page open, within about a
-second, and still there on return or after a restart, since the sqlite file
-at `${DATA_DIR}/cairn.db` is the only place that state lives. It's real-time
-over WebSockets, because the core interaction was hollow without it: a stone
-falling only on your own screen is a form submission, not a cairn. Moderation
-and a written decision about multi-user behaviour at real scale are next.
+Open it, drag the stone onto the pile, and it lands — for you and for anyone
+else with the page open, in milliseconds, not the "about a second" the brief
+asks for. What lands survives a restart or redeploy, since the sqlite file at
+`${DATA_DIR}/cairn.db` is the only place state lives, and a reconnecting
+session catches up on exactly what it missed with no reload. The gap last
+week's version flagged — "multi-user behaviour at real scale hasn't been
+argued for in writing" — is closed this week: there's now a written decision
+about the one thing several people can do to the app at once, enforced by a
+test that's been proven to catch its own violation.
 
 ## From the brief to Cairn
 
-The brief warns that an agent asked for a multi-user, real-time website builds
-the median answer: a chat room with the nouns swapped. So I started from what I
-didn't want and from the situation the brief names, the showcase: a room of
-people using it at once.
+The brief fixes three properties — multi-user, real-time, persistent — and
+leaves the concept open. Cairn answers with one shared pile of stones: drag
+one onto the pile, watch it land for everyone looking, and it's still there
+tomorrow. No accounts, no rooms, no score — the reasoning behind that and the
+stack is in last week's version of this file and in `docs/adr/`.
 
-Two shapes came up before Cairn. A shared pixel wall is the obvious
-co-presence piece, but unlimited marks make it a feed with colours; nobody's
-pixel matters. A shared garden was close, but needed invented reasons to come
-back. A cairn kept both things the brief asks for in one metaphor people
-already know: many hands, one pile (co-presence), a stone that stays
-(persistence). Sloan's home-cooked-software essay gave permission to design
-for one studio rather than for scale — also why there are no accounts or
-moderation tools yet.
+## The stack, and how real-time travels
 
-## The stack, and why
+Unchanged from week 9: Node 24 runs `.ts` source directly (no build step,
+anywhere), `node:sqlite` is the only store, and `ws` is the one runtime
+dependency. A drop travels as `{type:"drop", visitorId, x}` over `/ws`; the
+server validates it (visitorId must parse as a UUID, x must be a finite number
+in `[0,1]`) before it reaches `node:sqlite` or anyone else, inserts it, and
+broadcasts `{type:"stone", stone}` to every open client, sender included. A
+fresh or reconnecting client gets the whole pile back as one `{type:"state"}`
+push the instant it connects — that's also how a dropped connection catches
+up, since there's no separate reconnect protocol, just the same push run
+again. Carrying a stone — the drag before it lands — never crosses `/ws` at
+all; that boundary is this week's decision, not an accident.
 
-Node 24 with the built-in `node:sqlite` and `node:http`, and one runtime
-dependency, `ws`, for the WebSocket upgrade. The full trade-off — a
-framework-plus-managed-database approach, a CRDT/local-first design — is in
-[ADR 0001](docs/adr/0001-stack.md). The deciding reason was fit: Node 24
-type-strips and runs `.ts` source directly, so there's no build step
-anywhere, in dev or in the image, and `node:sqlite` meant persistence needed
-no extra dependency. The cost is a few TypeScript constructs the
-type-stripper can't erase, and no offline/CRDT story — but appending a stone
-never conflicts, so that complexity wasn't earned. Identity is a
-client-generated id in `localStorage`, hashed to a colour server-side —
-deliberately not a cookie or account — argued for in
-[ADR 0002](docs/adr/0002-visitor-identity.md).
+## This week's decision
 
-The schema is the smallest one that carries the interaction: one `stones`
-table (`id`, `visitor_id`, `color`, `x`, `rotation`, `created_at`). There is no
-visitors table — a visitor is only an id attached to the stones they placed
-([`4ccb591`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/4ccb591)).
-
-## How I worked with the agent
-
-The agent read the course's fixed files first (`fly.toml`, the `Dockerfile`
-comments, `spec/README.md`, the evidence script), so the constraints were in
-context before any design. The order I held to when reviewing was README
-claim → CLAUDE.md rule → `spec/` test, so every enforced claim points at a
-named test
-([`ccf66e6`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/ccf66e6)).
-
-Two practices did most of the grounding. Every check runs against a real,
-running instance of the app — over HTTP and over the actual `/ws` protocol —
-so a pass means deployed behaviour, not an isolated function. And a check
-isn't trusted until it has failed for real: the markdown code-span bug and
-the WebSocket race (below) were both caught this way, as genuine failures,
-not staged ones. For the interface, done meant two browser sessions open
-side by side — a stone placed in one appeared in the other within about a
-second, the claim README actually makes.
+The crit asked for one written decision about behaviour with several people
+at once. I picked **carry stays local**: carrying a stone toward the pile
+stays on the visitor's own screen; only a completed drop is ever sent or
+broadcast. The alternative that got real consideration — broadcasting a live
+"ghost stone" as people drag, so the room feels populated even between drops —
+was rejected because it reopens exactly the directed presence signal
+[ADR 0002](docs/adr/0002-visitor-identity.md) already argued against, for a
+lull problem that's hypothetical for a crit-room audience, not observed. The
+full reasoning, the three options actually weighed, and the strongest case for
+the option *not* picked are in
+[ADR 0003](docs/adr/0003-carry-stays-local.md)
+([`67668c6`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/67668c6)).
 
 ## Where I directed the work
 
-My direction this week was about scope and order more than code. I decided to
-ship the crit before thinking further about the final project, so the first
-version aimed at the "proof of life" line and nothing else; real-time came
-early only because the cairn made no sense without it. I kept the evidence
-that's about me — this section and the reflection — out of the agent's hands,
-and ran the work as fixed prompts in order: constraints, staged commits,
-deploy and verify, process, reflection. Deploy required any failure to be
-fixed as a rule in CLAUDE.md or a test in `spec/`, not just patched. What I'd
-change: decide the concept before the session starts, not during it.
+I ran this week, like last week, as fixed prompts in a set order: ground
+first with no changes, make real-time complete, propose candidates for the
+one required decision and stop, write the decision down once I'd picked,
+build and enforce it, then deploy and verify against the live site before
+touching process or reflection. The one call only I could make was the pick
+itself — three candidates were proposed (live carry, a rate limit on drops, a
+cap on how much history a reconnect replays), each with real options and
+costs against README's own definition of "good," and I chose carry-stays-local
+over the agent building anything ahead of that answer. I also held a
+boundary during live verification: asked for the Fly machine serving the
+graded deploy to be force-stopped to measure cold start on demand, and that
+was refused as going beyond what I'd actually asked for (measuring, not
+touching production) — the right call, so cold start was measured by waiting
+for the machine's own idle timeout instead, which is the number a real visitor
+would actually hit.
+
+## Grounding
+
+Every claim this week was checked against a running app, not a mock: the new
+1000ms broadcast assertion
+([`b645dbb`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/b645dbb)),
+the five-simultaneous-session and dropped-connection tests
+([`11b77ed`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/11b77ed)),
+and the carry-never-broadcasts test
+([`94a0056`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/94a0056))
+all run over the real `/ws` protocol. After deploying, the full spec ran again
+with `APP_URL` pointed at the live `fly.dev` URL, not just localhost, and a
+two-session timing check against the live site measured an actual 16.9ms
+broadcast. Where grounding wasn't possible, that's said plainly rather than
+papered over: no headless browser could be launched in this environment to
+visually confirm the layout at 390px and 1280px, so that check rests on
+reading the served CSS, not a screenshot — and testing the keyboard turned up
+a real gap (the carry stone has no `tabindex` and no key handler) that's
+reported as a failure, not quietly fixed.
 
 ## Correcting
 
-The first two of these are in CLAUDE.md's corrections log, each as a rule
-rather than a retry
-([`9e34c45`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/9e34c45)).
-The third is process, not code, so it isn't in that file, but it mattered the
-same way:
+Two corrections landed in `CLAUDE.md` and `spec/` this week, each as a rule
+rather than a retry:
 
-- **The markdown renderer re-rendered markdown found inside its own code
-  spans.** A literal `` `![alt](src)` ``, backticked specifically so it would
-  display as text, was turned into a nested `<img>` instead, because the
-  image/link patterns ran over text that already contained rendered `<code>`
-  spans. Fixed by pulling code spans out behind placeholders before any other
-  inline rule runs, and restoring them last. The rule: once text is inside a
-  code span, nothing else may touch it again.
-- **A WebSocket test attached its listener too late.** `ws.once("message",
-  ...)` was attached only after `await connect()` had already resolved, and
-  Node's `EventEmitter` doesn't queue an event for a listener that isn't
-  registered yet — so a message arriving in that gap (often the initial
-  `state` push) was lost, and the next wait picked up the wrong message,
-  hanging two tests. Fixed by giving every test connection a message queue
-  from the moment it opens. The rule: anything that `await`s before it starts
-  listening to a socket needs a queue, not a one-shot listener.
-- **A reflection draft described a different project.** An uncommitted draft
-  in `reflections/README.md` described a UTC day boundary and a stone preview
-  bug — neither happened here; the real corrections are the two above. I
-  caught the mismatch against CLAUDE.md's actual log and directed the
-  rewrite to use only this repo's history. The rule: check what gets written
-  about my process as carefully as the code.
+- **The carry-never-broadcasts test was proven to fail before it was trusted
+  to pass.** I deliberately broke `src/server.ts` to relay any unrecognised
+  message live, confirmed the new test went red, then reverted — `git diff`
+  showed zero change afterward
+  ([`94a0056`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/94a0056)).
+  A rule protecting the decision itself is now in `CLAUDE.md`
+  ([`7bc290d`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/7bc290d)).
+- **A spec test timed out against the live deploy, not against localhost.**
+  The reconnect test opens three WebSocket connections in sequence; against
+  `localhost` that's fast, but three real TLS handshakes to the deployed
+  machine in `syd` pushed it past vitest's 5000ms default. I confirmed every
+  assertion inside it actually passed given more time before changing
+  anything, then raised that one test's timeout rather than touching the app,
+  and logged the rule in `CLAUDE.md`
+  ([`5dd6ba2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/5dd6ba2)).
 
-## What I'm watching for in week 10
+## What I'm watching for in week 11
 
-The README's weakest claim is that there's no cap or rate limit on the pile —
-fine for a room-sized showcase, untested against the open internet. Making
-the repo public comes first; that isn't true yet. The real-time layer also
-needs its own written decision: appending a stone never conflicts, so a
-single authoritative server over WebSockets was enough to get to "it's
-alive," but multi-user behaviour at real scale hasn't been argued for in
-writing the way the stack and identity decisions were.
-
+The keyboard gap found this week is real and still open: the core
+carry-and-drop interaction has no keyboard path at all. Fixing it means
+deciding what "drop via keyboard" actually does — land at a default position,
+or something else — which is a decision, not a one-line patch, so it's named
+here rather than guessed at.
