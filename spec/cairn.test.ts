@@ -101,6 +101,35 @@ it("delivers a dropped stone to another open session within 1000ms", async () =>
   b.ws.close();
 });
 
+// Protects docs/adr/0003-carry-stays-local.md: carrying a stone must never
+// reach another session as a live broadcast, only a completed drop may. A
+// message shaped like an in-progress carry/position update is dropped the
+// same as any other message type this server doesn't recognise. Checking the
+// queue directly after a wait, rather than racing a fresh listener against a
+// timeout, avoids leaving a stray waiter behind that would steal the next
+// real message out from under the following assertion (the crit-8 race, in
+// reverse).
+it("never broadcasts a carry/in-progress drag, only a completed drop (ADR 0003)", async () => {
+  const a = await connect();
+  const b = await connect();
+  await nextMessage(a);
+  await nextMessage(b);
+
+  a.ws.send(JSON.stringify({ type: "carry", visitorId: randomUUID(), x: 0.5 }));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(b.queue).toHaveLength(0);
+
+  // Prove the connection is still alive, and that a real drop still works.
+  const validDrop = nextMessage(b);
+  a.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.33 }));
+  const message = await validDrop;
+  expect(message.type === "stone" && message.stone.x).toBeCloseTo(0.33);
+  expect(a.ws.readyState).toBe(WebSocket.OPEN);
+
+  a.ws.close();
+  b.ws.close();
+});
+
 it("shows a freshly opened session every stone dropped before it connected", async () => {
   const first = await connect();
   await nextMessage(first);
