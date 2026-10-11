@@ -22,6 +22,13 @@ work today.
 - The sqlite file at `${DATA_DIR}/cairn.db` is the single source of truth.
   Nothing a client depends on across a reconnect may live only in server
   memory.
+- Carrying a stone (the drag before it lands) never reaches `/ws` and is never
+  broadcast — only a completed drop is (`docs/adr/0003-carry-stays-local.md`).
+  If you're tempted to relay an in-progress drag, a cursor position, or any
+  other "someone is doing something" signal live to other clients: don't —
+  that reopens a decision already made against it. Changing this means
+  rewriting ADR 0003 and README.md together, not adding a new message type
+  quietly.
 - No build step. `node src/server.ts` is the entire run command, in `pnpm dev`
   and in the image (`docs/adr/0001-stack.md`). If a TypeScript construct needs
   a build step to work (enums, namespaces, constructor parameter-property
