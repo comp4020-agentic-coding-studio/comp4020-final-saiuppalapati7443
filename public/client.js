@@ -1,15 +1,6 @@
-const VISITOR_ID_KEY = "cairn-visitor-id";
-
-function getVisitorId() {
-  let id = localStorage.getItem(VISITOR_ID_KEY);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(VISITOR_ID_KEY, id);
-  }
-  return id;
-}
-
-const visitorId = getVisitorId();
+// Identity comes from a server-set cookie (docs/adr/0004), sent
+// automatically with every request — the client never generates or reports
+// an id of its own.
 const cairn = document.getElementById("cairn");
 const countEl = document.getElementById("count");
 const carryStone = document.getElementById("carry-stone");
@@ -40,6 +31,7 @@ function landStone(stone) {
   el.style.left = `calc(${stone.x * 100}% - ${size / 2}px)`;
   el.style.top = `${restingTop(stone, size)}px`;
   el.style.background = stone.color;
+  if (stone.mine) el.classList.add("mine");
   el.style.opacity = "0.5";
   el.style.transform = `translateY(-60px) scale(0.6) rotate(${stone.rotation}deg)`;
   cairn.appendChild(el);
@@ -83,7 +75,7 @@ function drop(clientX) {
   const rect = cairn.getBoundingClientRect();
   const x = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
   if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({ type: "drop", visitorId, x }));
+    socket.send(JSON.stringify({ type: "drop", x }));
   }
 }
 

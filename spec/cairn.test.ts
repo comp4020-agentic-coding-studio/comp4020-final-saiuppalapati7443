@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { expect, inject, it } from "vitest";
 
@@ -14,6 +13,7 @@ interface StoneWire {
   color: string;
   x: number;
   rotation: number;
+  mine: boolean;
 }
 interface StateMessage {
   type: "state";
@@ -34,12 +34,22 @@ interface Conn {
   ws: WebSocket;
   queue: ServerMessage[];
   waiters: Array<(message: ServerMessage) => void>;
+  setCookie: string | undefined;
 }
 
-function connect(): Promise<Conn> {
+// `cookie` simulates one browser's cookie jar: pass none for a brand-new
+// visitor (like a fresh Chrome profile), or a previous connection's
+// `setCookie` to act as the same visitor reconnecting — or a hand-crafted
+// value to simulate a tampered one. Two separate `connect()` call sites with
+// no cookie passed between them are exactly "two separate Chrome profiles."
+function connect(cookie?: string): Promise<Conn> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
-    const conn: Conn = { ws, queue: [], waiters: [] };
+    const ws = new WebSocket(wsUrl, cookie ? { headers: { cookie } } : undefined);
+    const conn: Conn = { ws, queue: [], waiters: [], setCookie: undefined };
+    ws.once("upgrade", (res) => {
+      const raw = res.headers["set-cookie"];
+      conn.setCookie = Array.isArray(raw) ? raw[0] : raw;
+    });
     ws.on("message", (data) => {
       const message = JSON.parse(data.toString()) as ServerMessage;
       const waiter = conn.waiters.shift();
@@ -64,7 +74,7 @@ it("broadcasts a dropped stone to every other open session within about a second
   await nextMessage(b);
 
   const incoming = nextMessage(b);
-  a.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.42 }));
+  a.ws.send(JSON.stringify({ type: "drop", x:0.42 }));
 
   const message = await incoming;
   expect(message.type).toBe("stone");
@@ -90,7 +100,7 @@ it("delivers a dropped stone to another open session within 1000ms", async () =>
 
   const incoming = nextMessage(b);
   const start = performance.now();
-  a.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.55 }));
+  a.ws.send(JSON.stringify({ type: "drop", x:0.55 }));
 
   const message = await incoming;
   const elapsed = performance.now() - start;
@@ -115,13 +125,13 @@ it("never broadcasts a carry/in-progress drag, only a completed drop (ADR 0003)"
   await nextMessage(a);
   await nextMessage(b);
 
-  a.ws.send(JSON.stringify({ type: "carry", visitorId: randomUUID(), x: 0.5 }));
+  a.ws.send(JSON.stringify({ type: "carry", x: 0.5 }));
   await new Promise((resolve) => setTimeout(resolve, 300));
   expect(b.queue).toHaveLength(0);
 
   // Prove the connection is still alive, and that a real drop still works.
   const validDrop = nextMessage(b);
-  a.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.33 }));
+  a.ws.send(JSON.stringify({ type: "drop", x:0.33 }));
   const message = await validDrop;
   expect(message.type === "stone" && message.stone.x).toBeCloseTo(0.33);
   expect(a.ws.readyState).toBe(WebSocket.OPEN);
@@ -139,8 +149,8 @@ it("keeps five simultaneous sessions consistent, including two dropping at once"
   await Promise.all(sessions.map((session) => nextMessage(session)));
 
   const waits = sessions.map((session) => Promise.all([nextMessage(session), nextMessage(session)]));
-  sessions[0].ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.2 }));
-  sessions[1].ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.8 }));
+  sessions[0].ws.send(JSON.stringify({ type: "drop", x:0.2 }));
+  sessions[1].ws.send(JSON.stringify({ type: "drop", x:0.8 }));
 
   const perSession = await Promise.all(waits);
   const idsPerSession = perSession.map((pair) =>
@@ -178,6 +188,9 @@ it("keeps five simultaneous sessions consistent, including two dropping at once"
 // deployment and tripped vitest's 5000ms default, with every assertion inside
 // still passing. An explicit timeout, not a tighter retry, is the fix: the
 // behaviour was never slow, the default budget was just sized for localhost.
+// b and c are two distinct visitors (separate cookies), each dropping once,
+// while a is disconnected — not the same visitor dropping twice, which
+// ADR 0004's one-stone-a-day limit would now silently reject.
 it("catches up on reconnect after a dropped connection, without a reload", async () => {
   const a = await connect();
   await nextMessage(a);
@@ -188,9 +201,12 @@ it("catches up on reconnect after a dropped connection, without a reload", async
   a.ws.close();
   await aClosed;
 
+  const c = await connect();
+  await nextMessage(c);
+
   const missed = Promise.all([nextMessage(b), nextMessage(b)]);
-  b.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.15 }));
-  b.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.85 }));
+  b.ws.send(JSON.stringify({ type: "drop", x: 0.15 }));
+  c.ws.send(JSON.stringify({ type: "drop", x: 0.85 }));
   const missedMessages = await missed;
   const missedIds = missedMessages
     .filter((message): message is StoneMessage => message.type === "stone")
@@ -204,6 +220,7 @@ it("catches up on reconnect after a dropped connection, without a reload", async
   for (const id of missedIds) expect(stateIds).toContain(id);
 
   b.ws.close();
+  c.ws.close();
   reconnected.ws.close();
 }, 15000);
 
@@ -212,7 +229,7 @@ it("shows a freshly opened session every stone dropped before it connected", asy
   await nextMessage(first);
 
   const dropped = nextMessage(first);
-  first.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.1 }));
+  first.ws.send(JSON.stringify({ type: "drop", x:0.1 }));
   const droppedMessage = await dropped;
   if (droppedMessage.type !== "stone") throw new Error("expected a stone broadcast");
 
@@ -231,14 +248,15 @@ it("ignores a malformed drop instead of broadcasting it or dropping the connecti
   await nextMessage(a);
   await nextMessage(b);
 
-  a.ws.send(JSON.stringify({ type: "drop", visitorId: "not-a-uuid", x: 0.5 }));
-  a.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 5 }));
+  a.ws.send(JSON.stringify({ type: "drop", x: 5 }));
+  a.ws.send(JSON.stringify({ type: "drop", x: "0.5" }));
+  a.ws.send(JSON.stringify({ type: "carry", x: 0.5 }));
   a.ws.send("not even json");
 
   // Prove the connection is still alive, and that none of the above landed,
   // by making one valid drop and confirming it's the only thing that arrives.
   const validDrop = nextMessage(b);
-  a.ws.send(JSON.stringify({ type: "drop", visitorId: randomUUID(), x: 0.77 }));
+  a.ws.send(JSON.stringify({ type: "drop", x:0.77 }));
   const message = await validDrop;
   expect(message.type === "stone" && message.stone.x).toBeCloseTo(0.77);
   expect(a.ws.readyState).toBe(WebSocket.OPEN);
@@ -247,22 +265,192 @@ it("ignores a malformed drop instead of broadcasting it or dropping the connecti
   b.ws.close();
 });
 
-it("gives the same visitor the same color across separate drops", async () => {
+// ADR 0004 limits a visitor to one drop a day, so "the same visitor across
+// separate drops" is now checked across a reconnect with the same
+// server-issued cookie (same visitor, two sessions) rather than two drops in
+// one session (which the daily limit would reject the second of).
+it("gives the same visitor the same color across a reconnect", async () => {
   const a = await connect();
   await nextMessage(a);
-  const visitorId = randomUUID();
 
-  const first = nextMessage(a);
-  a.ws.send(JSON.stringify({ type: "drop", visitorId, x: 0.3 }));
-  const firstMessage = await first;
-  if (firstMessage.type !== "stone") throw new Error("expected a stone broadcast");
+  const dropped = nextMessage(a);
+  a.ws.send(JSON.stringify({ type: "drop", x: 0.3 }));
+  const droppedMessage = await dropped;
+  if (droppedMessage.type !== "stone") throw new Error("expected a stone broadcast");
+  a.ws.close();
 
-  const second = nextMessage(a);
-  a.ws.send(JSON.stringify({ type: "drop", visitorId, x: 0.6 }));
-  const secondMessage = await second;
-  if (secondMessage.type !== "stone") throw new Error("expected a stone broadcast");
+  const again = await connect(a.setCookie);
+  const state = await nextMessage(again);
+  if (state.type !== "state") throw new Error("expected initial state");
+  const mine = state.stones.find((stone) => stone.id === droppedMessage.stone.id);
+  expect(mine?.color).toBe(droppedMessage.stone.color);
 
-  expect(firstMessage.stone.color).toBe(secondMessage.stone.color);
+  again.ws.close();
+});
+
+// --- docs/adr/0004-who-may-see-and-change-what.md -------------------------
+//
+// Two cookie jars (a and b), standing in for two separate Chrome profiles:
+// each `connect()` call with no cookie argument is a fresh visitor, exactly
+// like opening the app in a browser that's never been there before. The
+// server, not either client, decides who they are and what they may do.
+
+it("tells two visitors apart by a server-set cookie, not by anything they send", async () => {
+  const a = await connect();
+  const b = await connect();
+
+  expect(a.setCookie, "a fresh connection must get a Set-Cookie").toBeTruthy();
+  expect(b.setCookie, "a fresh connection must get a Set-Cookie").toBeTruthy();
+  expect(a.setCookie).not.toBe(b.setCookie);
+
+  a.ws.close();
+  b.ws.close();
+});
+
+it("each visitor sees the other's stone live, but only their own is marked mine", async () => {
+  const a = await connect();
+  const b = await connect();
+  await nextMessage(a);
+  await nextMessage(b);
+
+  const aSeesItsOwn = nextMessage(a);
+  const bSeesAs = nextMessage(b);
+  a.ws.send(JSON.stringify({ type: "drop", x: 0.4 }));
+
+  const [fromA, fromB] = await Promise.all([aSeesItsOwn, bSeesAs]);
+  if (fromA.type !== "stone" || fromB.type !== "stone") throw new Error("expected stone broadcasts");
+  expect(fromA.stone.id).toBe(fromB.stone.id);
+  expect(fromA.stone.mine, "the dropping visitor must see their own stone as mine").toBe(true);
+  expect(fromB.stone.mine, "a different visitor must never see someone else's stone as mine").toBe(false);
+
+  a.ws.close();
+  b.ws.close();
+});
+
+// There is no message type for moving, editing, or deleting a stone at all
+// (ADR 0004: nobody may, ever, not even the owner) — so "B cannot move, edit
+// or delete A's stone" is checked by confirming the server ignores anything
+// shaped like an attempt, from anyone, the same way it ignores any other
+// message type it doesn't recognise, and that A's stone is unchanged after.
+it("B cannot move, edit, or delete A's stone — there is no such message to send", async () => {
+  const a = await connect();
+  const b = await connect();
+  await nextMessage(a);
+  await nextMessage(b);
+
+  const aDrops = nextMessage(a);
+  const bSeesADrop = nextMessage(b);
+  a.ws.send(JSON.stringify({ type: "drop", x: 0.5 }));
+  const aStone = await aDrops;
+  await bSeesADrop; // A's own drop also reaches B; drain it before checking B's queue below.
+  if (aStone.type !== "stone") throw new Error("expected a stone broadcast");
+
+  for (const attempt of [
+    { type: "move", id: aStone.stone.id, x: 0.9 },
+    { type: "edit", id: aStone.stone.id, color: "hsl(0, 0%, 0%)" },
+    { type: "delete", id: aStone.stone.id },
+  ]) {
+    b.ws.send(JSON.stringify(attempt));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(b.queue, "none of B's attempts should have been broadcast to anyone").toHaveLength(0);
+
+  const check = await connect();
+  const state = await nextMessage(check);
+  if (state.type !== "state") throw new Error("expected initial state");
+  const stillThere = state.stones.find((stone) => stone.id === aStone.stone.id);
+  expect(stillThere?.x).toBeCloseTo(0.5);
+  expect(stillThere?.color).toBe(aStone.stone.color);
+
+  a.ws.close();
+  b.ws.close();
+  check.ws.close();
+});
+
+it("ignores a forged visitorId, name, mine, or id in the drop body", async () => {
+  const a = await connect();
+  const b = await connect();
+  await nextMessage(a);
+  await nextMessage(b);
+
+  const seenByA = nextMessage(a);
+  const seenByB = nextMessage(b);
+  a.ws.send(
+    JSON.stringify({
+      type: "drop",
+      x: 0.25,
+      visitorId: "11111111-1111-1111-1111-111111111111",
+      name: "eve",
+      mine: true,
+      id: 999999,
+    }),
+  );
+  const [fromA, fromB] = await Promise.all([seenByA, seenByB]);
+  if (fromA.type !== "stone" || fromB.type !== "stone") throw new Error("expected stone broadcasts");
+
+  // The forged fields must have had no effect: the stone is still recorded
+  // against a's real cookie identity (so a, the actual dropper, still sees
+  // it as mine — a server that instead trusted the forged visitorId would
+  // attribute the stone to that id and this would flip to false), the id is
+  // server-chosen (not 999999), and b — who didn't send the drop — never
+  // sees it as mine either.
+  expect(fromA.stone.id).not.toBe(999999);
+  expect(fromA.stone.mine, "the real dropper must still see their own stone as mine").toBe(true);
+  expect(fromB.stone.mine).toBe(false);
+
+  a.ws.close();
+  b.ws.close();
+});
+
+it("gives a tampered cookie a brand-new identity, never someone else's", async () => {
+  const real = await connect();
+  await nextMessage(real);
+
+  const tampered = await connect("cairn_visitor=not-a-uuid-at-all");
+  expect(
+    tampered.setCookie,
+    "a cookie that isn't a valid id must be replaced with a freshly minted one",
+  ).toBeTruthy();
+  await nextMessage(tampered);
+
+  const realDrops = nextMessage(real);
+  const tamperedSeesIt = nextMessage(tampered);
+  real.ws.send(JSON.stringify({ type: "drop", x: 0.6 }));
+  const [realStone, seenByTampered] = await Promise.all([realDrops, tamperedSeesIt]);
+  if (realStone.type !== "stone" || seenByTampered.type !== "stone") {
+    throw new Error("expected stone broadcasts");
+  }
+  // The tampered-cookie visitor is a distinct identity: it sees the real
+  // visitor's stone, but never as its own.
+  expect(seenByTampered.stone.mine).toBe(false);
+
+  const tamperedDrops = nextMessage(tampered);
+  tampered.ws.send(JSON.stringify({ type: "drop", x: 0.7 }));
+  const tamperedStone = await tamperedDrops;
+  if (tamperedStone.type !== "stone") throw new Error("expected a stone broadcast");
+  expect(tamperedStone.stone.color).not.toBe(realStone.stone.color);
+
+  real.ws.close();
+  tampered.ws.close();
+});
+
+it("never includes a cookie id anywhere in a response", async () => {
+  const a = await connect();
+  const state = await nextMessage(a);
+  if (state.type !== "state") throw new Error("expected initial state");
+
+  const dropped = nextMessage(a);
+  a.ws.send(JSON.stringify({ type: "drop", x: 0.5 }));
+  const stoneMessage = await dropped;
+
+  const cookieId = a.setCookie?.match(/cairn_visitor=([^;]+)/)?.[1];
+  expect(cookieId, "test setup should have captured a cookie id to check against").toBeTruthy();
+
+  for (const payload of [state, stoneMessage]) {
+    const serialised = JSON.stringify(payload);
+    expect(serialised).not.toContain(cookieId);
+    expect(serialised).not.toMatch(/visitorId/i);
+  }
 
   a.ws.close();
 });

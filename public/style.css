@@ -54,6 +54,13 @@ main {
   transition: transform 0.4s ease, opacity 0.3s ease;
 }
 
+/* "This is yours" (docs/adr/0004) is purely a client-side visual cue, driven
+   by the server's own `mine` flag on each stone — never guessed locally. */
+.stone.mine {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
 #carry-zone {
   display: flex;
   flex-direction: column;
