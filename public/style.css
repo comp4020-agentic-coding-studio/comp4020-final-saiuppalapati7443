@@ -79,12 +79,29 @@ main {
   touch-action: none;
 }
 
+#carry-stone:focus-visible {
+  outline: 3px solid #2a6fdb;
+  outline-offset: 3px;
+}
+
+#carry-stone[aria-disabled="true"] {
+  background: #b7bec7;
+  cursor: default;
+  box-shadow: none;
+}
+
 #carry-stone.dragging {
   position: fixed;
   z-index: 10;
   cursor: grabbing;
   transform: translate(-50%, -50%);
   pointer-events: none;
+}
+
+#carry-hint {
+  color: #5a5a55;
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 #count {

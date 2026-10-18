@@ -214,6 +214,10 @@ wss.on("connection", (ws: ConnectedSocket) => {
     JSON.stringify({
       type: "state",
       stones: listStones().map((stone) => toWireStone(stone, viewerVisitorId)),
+      // Purely descriptive, for the page to explain the one-a-day limit
+      // before a visitor hits it — the server enforces the limit itself on
+      // every drop regardless of what this says.
+      placedToday: hasDroppedToday(viewerVisitorId),
     }),
   );
 

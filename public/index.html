@@ -9,13 +9,26 @@
   <body>
     <header>
       <h1>Cairn</h1>
-      <p>Carry a stone. Drop it. Watch it land — for everyone, right now.</p>
+      <p>
+        A shared pile of stones, built one at a time by everyone who visits.
+        Drag the stone below onto the pile — or focus it and press Enter or
+        Space — and watch it land, for you and for everyone else here right
+        now. Each stone's color is whoever placed it; a white ring marks the
+        ones you placed yourself. You can place one stone per day.
+      </p>
       <p><a href="/readme/">About this app</a></p>
     </header>
     <main>
       <div id="cairn" aria-label="the shared cairn"></div>
       <div id="carry-zone">
-        <div id="carry-stone" title="Drag me onto the cairn"></div>
+        <div
+          id="carry-stone"
+          role="button"
+          tabindex="0"
+          aria-label="Drag this stone onto the cairn above, or press Enter or Space to drop it"
+          title="Drag me onto the cairn, or press Enter / Space"
+        ></div>
+        <p id="carry-hint">Drag onto the pile above, or press Enter / Space</p>
       </div>
     </main>
     <p id="count">Loading the cairn…</p>

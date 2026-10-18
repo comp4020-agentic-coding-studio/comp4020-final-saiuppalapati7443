@@ -4,12 +4,23 @@
 const cairn = document.getElementById("cairn");
 const countEl = document.getElementById("count");
 const carryStone = document.getElementById("carry-stone");
+const carryHint = document.getElementById("carry-hint");
 
 let stoneCount = 0;
 
 function updateCount() {
   countEl.textContent =
     stoneCount === 1 ? "1 stone placed so far" : `${stoneCount} stones placed so far`;
+}
+
+// Purely descriptive (the server enforces the real limit on every drop
+// regardless of this): once a visitor's placed today, the carry stone stops
+// inviting another drag, so "one stone a day" is something a newcomer can
+// see, not just something that silently does nothing if they try twice.
+function markPlacedToday() {
+  carryStone.setAttribute("aria-disabled", "true");
+  carryStone.tabIndex = -1;
+  carryHint.textContent = "You've placed your stone for today — come back tomorrow.";
 }
 
 // The ground line in style.css sits at 70% of the container's height; stones
@@ -64,8 +75,10 @@ function connect() {
     const message = JSON.parse(event.data);
     if (message.type === "state") {
       for (const stone of message.stones) landStone(stone);
+      if (message.placedToday) markPlacedToday();
     } else if (message.type === "stone") {
       landStone(message.stone);
+      if (message.stone.mine) markPlacedToday();
     }
   });
 
@@ -92,6 +105,7 @@ function drop(clientX) {
 let dragging = false;
 
 carryStone.addEventListener("pointerdown", (event) => {
+  if (carryStone.getAttribute("aria-disabled") === "true") return;
   dragging = true;
   carryStone.setPointerCapture(event.pointerId);
   carryStone.classList.add("dragging");
@@ -117,4 +131,14 @@ carryStone.addEventListener("pointerup", (event) => {
     event.clientY >= rect.top &&
     event.clientY <= rect.bottom;
   if (inside) drop(event.clientX);
+});
+
+// Keyboard parity for the drag: there's no cursor position to carry to, so
+// Enter/Space drops at the cairn's horizontal centre — a fixed, predictable
+// spot rather than guessing at one.
+carryStone.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  const rect = cairn.getBoundingClientRect();
+  drop(rect.left + rect.width / 2);
 });
