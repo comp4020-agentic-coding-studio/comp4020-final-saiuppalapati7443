@@ -53,6 +53,13 @@ function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
+  // Reported once so a first-time arrival can be logged with the viewport it
+  // actually showed up on (server-side, see src/server.ts) — purely
+  // descriptive, never used to decide anything.
+  ws.addEventListener("open", () => {
+    ws.send(JSON.stringify({ type: "hello", width: window.innerWidth, height: window.innerHeight }));
+  });
+
   ws.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.type === "state") {

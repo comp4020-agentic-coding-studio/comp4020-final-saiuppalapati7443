@@ -2,10 +2,12 @@ import { createServer, type IncomingMessage } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
-import { hasDroppedToday, insertStone, listStones, type Stone } from "./db.ts";
+import { findStone, hasDroppedToday, insertStone, listStones, type Stone } from "./db.ts";
 import { renderMarkdown } from "./readme.ts";
 import { serveFile } from "./static.ts";
 import { isSecureRequest, resolveVisitor, setCookieHeader } from "./identity.ts";
+import { logEvent } from "./log.ts";
+import { publicId } from "./pseudonym.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
@@ -17,18 +19,12 @@ interface DropMessage {
   x: number;
 }
 
-// Anything arriving over the socket is untrusted: unparseable JSON, the
-// wrong shape, or an x outside [0, 1] is dropped here and never reaches
-// node:sqlite or another client. ADR 0004: identity is never read from the
-// message body — a `visitorId`, `name`, `mine`, or `id` field here is simply
-// never looked at, forged or not, so there's nothing to validate it against.
-function parseDrop(data: string): DropMessage | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(data);
-  } catch {
-    return null;
-  }
+// Anything arriving over the socket is untrusted: the wrong shape, or an x
+// outside [0, 1], is rejected here and never reaches node:sqlite or another
+// client. ADR 0004: identity is never read from the message body — a
+// `visitorId`, `name`, `mine`, or `id` field here is simply never looked at,
+// forged or not, so there's nothing to validate it against.
+function parseDrop(value: unknown): DropMessage | null {
   if (typeof value !== "object" || value === null) return null;
   const msg = value as Record<string, unknown>;
   if (
@@ -39,6 +35,60 @@ function parseDrop(data: string): DropMessage | null {
     msg.x <= 1
   ) {
     return { type: "drop", x: msg.x };
+  }
+  return null;
+}
+
+interface HelloMessage {
+  type: "hello";
+  width: number;
+  height: number;
+}
+
+// A client reports its own viewport once, right after connecting, purely so
+// an arrival can be logged with it (CLAUDE.md: every action that changes
+// shared state is logged — arriving isn't one, but it's what the crit's
+// narration needs to say "who showed up, on what"). Bounded generously
+// (real viewports, not an attacker's arbitrary payload) and otherwise
+// ignored like any other malformed message.
+function parseHello(value: unknown): HelloMessage | null {
+  if (typeof value !== "object" || value === null) return null;
+  const msg = value as Record<string, unknown>;
+  if (
+    msg.type === "hello" &&
+    typeof msg.width === "number" &&
+    Number.isFinite(msg.width) &&
+    msg.width > 0 &&
+    msg.width <= 20000 &&
+    typeof msg.height === "number" &&
+    Number.isFinite(msg.height) &&
+    msg.height > 0 &&
+    msg.height <= 20000
+  ) {
+    return { type: "hello", width: msg.width, height: msg.height };
+  }
+  return null;
+}
+
+interface AttemptMessage {
+  type: "move" | "edit" | "delete";
+  id: number;
+}
+
+// There is no move/edit/delete message type in this app at all (ADR 0004:
+// nobody may ever mutate a placed stone) — this exists only to recognise an
+// attempt shaped like one, so it can be named in a "refuse" log line with
+// the stone's real owner, rather than silently vanishing the same as any
+// other unrecognised message type.
+function parseAttempt(value: unknown): AttemptMessage | null {
+  if (typeof value !== "object" || value === null) return null;
+  const msg = value as Record<string, unknown>;
+  if (
+    (msg.type === "move" || msg.type === "edit" || msg.type === "delete") &&
+    typeof msg.id === "number" &&
+    Number.isFinite(msg.id)
+  ) {
+    return { type: msg.type, id: msg.id };
   }
   return null;
 }
@@ -84,25 +134,11 @@ ${body}
 `;
 }
 
-// ADR 0004: a visitor who shows up with no cookie, or a tampered/forged one
-// (not a UUID the server itself minted), gets a brand-new identity set here
-// — never a repaired or reused one. That's the only place a visitor's cookie
-// is ever set.
-function ensureVisitorCookie(req: IncomingMessage, res: { setHeader(name: string, value: string): void }): string {
-  const { visitorId, isNew } = resolveVisitor(req.headers.cookie);
-  if (isNew) {
-    res.setHeader("Set-Cookie", setCookieHeader(visitorId, isSecureRequest(req.headers)));
-  }
-  return visitorId;
-}
-
 const server = createServer((req, res) => {
   if (req.method !== "GET") {
     res.writeHead(404).end();
     return;
   }
-
-  ensureVisitorCookie(req, res);
 
   const { pathname } = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   const decoded = decodeURIComponent(pathname);
@@ -132,6 +168,8 @@ const server = createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 
+type ConnectedSocket = WebSocket & { visitorId: string; isNewVisitor: boolean };
+
 // The cookie set here is a response header on the HTTP upgrade request
 // itself — the one point in the WebSocket handshake where the server can
 // still set a header, before the connection switches protocols. A visitor
@@ -153,13 +191,25 @@ server.on("upgrade", (req, socket, head) => {
     });
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
-    (ws as WebSocket & { visitorId: string }).visitorId = visitorId;
+    const connected = ws as ConnectedSocket;
+    connected.visitorId = visitorId;
+    connected.isNewVisitor = isNew;
     wss.emit("connection", ws, req);
   });
 });
 
-wss.on("connection", (ws: WebSocket & { visitorId: string }) => {
+wss.on("connection", (ws: ConnectedSocket) => {
   const viewerVisitorId = ws.visitorId;
+  const who = publicId(viewerVisitorId);
+  // isNew (a cookie freshly minted this connection) is "visit"; an already-
+  // held cookie reconnecting is "connect" — the viewport only accompanies a
+  // visit, logged once the client's "hello" arrives below.
+  if (!ws.isNewVisitor) logEvent("connect", who, "reconnected");
+
+  ws.on("close", () => {
+    logEvent("drop", who, "connection closed");
+  });
+
   ws.send(
     JSON.stringify({
       type: "state",
@@ -168,15 +218,50 @@ wss.on("connection", (ws: WebSocket & { visitorId: string }) => {
   );
 
   ws.on("message", (data) => {
-    const message = parseDrop(data.toString());
-    if (!message) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data.toString());
+    } catch {
+      logEvent("error", who, "sent unparseable message");
+      return;
+    }
+
+    const hello = parseHello(parsed);
+    if (hello) {
+      if (ws.isNewVisitor) {
+        logEvent("visit", who, `new visitor, viewport ${hello.width}x${hello.height}`);
+      }
+      return;
+    }
+
+    const attempt = parseAttempt(parsed);
+    if (attempt) {
+      // No message type here ever does anything (ADR 0004 — nobody may ever
+      // move, edit, or delete a placed stone); this only exists so the
+      // attempt is named in the log, with the stone's real owner, instead of
+      // silently vanishing like any other unrecognised message.
+      const target = findStone(attempt.id);
+      const owner = target ? publicId(target.visitorId) : "an unknown stone";
+      logEvent("refuse", who, `tried to ${attempt.type} stone #${attempt.id} owned by ${owner}`);
+      return;
+    }
+
+    const drop = parseDrop(parsed);
+    if (!drop) {
+      logEvent("error", who, `sent an unrecognised or malformed message`);
+      return;
+    }
     // ADR 0004: one stone per visitor per Canberra day, enforced against the
     // cookie-resolved identity — never a client-claimed one — so a visitor
     // can't bypass the limit by sending a different id in the message.
-    if (hasDroppedToday(viewerVisitorId)) return;
+    if (hasDroppedToday(viewerVisitorId)) {
+      logEvent("refuse", who, "tried to place a second stone today");
+      return;
+    }
 
-    const stone = insertStone(viewerVisitorId, message.x);
-    for (const client of wss.clients as Set<WebSocket & { visitorId: string }>) {
+    const stone = insertStone(viewerVisitorId, drop.x);
+    logEvent("place", who, `stone #${stone.id} at x=${Math.round(stone.x * 1000)}`);
+    for (const client of wss.clients as Set<ConnectedSocket>) {
       if (client.readyState !== WebSocket.OPEN) continue;
       const payload = JSON.stringify({ type: "stone", stone: toWireStone(stone, client.visitorId) });
       client.send(payload);
@@ -185,5 +270,5 @@ wss.on("connection", (ws: WebSocket & { visitorId: string }) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`cairn listening on 0.0.0.0:${PORT}`);
+  logEvent("boot", null, `cairn listening on 0.0.0.0:${PORT}`);
 });

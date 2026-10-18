@@ -76,6 +76,12 @@ work today.
   cookies or using a different browser legitimately resets the count, same
   as ADR 0002 already accepted for color — that's a known limit of anonymous
   identity, not a bypass to close.)
+- Every action that changes shared state (a placed stone, or an attempt
+  rejected at the server) must log who did it, one line to stdout, in the
+  form `<type>  <pseudonym>#<handle> <detail>` (`src/log.ts`). A cookie id
+  must never be logged, anywhere, for any reason — not in a detail string,
+  not in an error message, not even truncated. Only `src/pseudonym.ts`'s
+  one-way `publicId()` may stand in for a visitor in a log line.
 
 ## Corrections (things actually caught and fixed this session)
 

@@ -66,6 +66,9 @@ const listStmt = db.prepare(
 const countTodayStmt = db.prepare(
   "SELECT COUNT(*) AS n FROM stones WHERE visitor_id = ? AND canberra_date = ?",
 );
+const findByIdStmt = db.prepare(
+  "SELECT id, visitor_id, color, x, rotation, created_at, canberra_date FROM stones WHERE id = ?",
+);
 
 // The brief and the crit run on Canberra's clock, so that's the day boundary
 // for the one-stone-a-day limit (ADR 0004) — not UTC, not the visitor's own
@@ -107,14 +110,27 @@ export function insertStone(visitorId: string, x: number): Stone {
   };
 }
 
-export function listStones(): Stone[] {
-  const rows = listStmt.all() as unknown as StoneRow[];
-  return rows.map((row) => ({
+function fromRow(row: StoneRow): Stone {
+  return {
     id: row.id,
     visitorId: row.visitor_id,
     color: row.color,
     x: row.x,
     rotation: row.rotation,
     createdAt: row.created_at,
-  }));
+  };
+}
+
+export function listStones(): Stone[] {
+  const rows = listStmt.all() as unknown as StoneRow[];
+  return rows.map(fromRow);
+}
+
+// Used only to name the owner of a stone a rejected action targeted, in a
+// log line (e.g. "refuse ... stone #42 owned by quiet-heron#a1b2c3") — never
+// to decide anything, since there's nothing to decide: no action can target
+// an existing stone at all (ADR 0004).
+export function findStone(id: number): Stone | undefined {
+  const row = findByIdStmt.get(id) as unknown as StoneRow | undefined;
+  return row ? fromRow(row) : undefined;
 }
