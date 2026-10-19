@@ -201,6 +201,11 @@ server.on("upgrade", (req, socket, head) => {
 wss.on("connection", (ws: ConnectedSocket) => {
   const viewerVisitorId = ws.visitorId;
   const who = publicId(viewerVisitorId);
+  // wss.handleUpgrade already added `ws` to wss.clients before emitting
+  // "connection" (see ws's own completeUpgrade), so clients.size here already
+  // counts this connection — the room size right after this visitor joined,
+  // not before.
+  logEvent("join", who, `clients_in_room=${wss.clients.size}`);
   // isNew (a cookie freshly minted this connection) is "visit"; an already-
   // held cookie reconnecting is "connect" — the viewport only accompanies a
   // visit, logged once the client's "hello" arrives below.
