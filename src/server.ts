@@ -210,16 +210,18 @@ wss.on("connection", (ws: ConnectedSocket) => {
     logEvent("drop", who, "connection closed");
   });
 
+  const snapshot = listStones();
   ws.send(
     JSON.stringify({
       type: "state",
-      stones: listStones().map((stone) => toWireStone(stone, viewerVisitorId)),
+      stones: snapshot.map((stone) => toWireStone(stone, viewerVisitorId)),
       // Purely descriptive, for the page to explain the one-a-day limit
       // before a visitor hits it — the server enforces the limit itself on
       // every drop regardless of what this says.
       placedToday: hasDroppedToday(viewerVisitorId),
     }),
   );
+  logEvent("state", who, `sent snapshot of ${snapshot.length} stone(s)`);
 
   ws.on("message", (data) => {
     let parsed: unknown;
@@ -265,11 +267,14 @@ wss.on("connection", (ws: ConnectedSocket) => {
 
     const stone = insertStone(viewerVisitorId, drop.x);
     logEvent("place", who, `stone #${stone.id} at x=${Math.round(stone.x * 1000)}`);
+    let recipients = 0;
     for (const client of wss.clients as Set<ConnectedSocket>) {
       if (client.readyState !== WebSocket.OPEN) continue;
       const payload = JSON.stringify({ type: "stone", stone: toWireStone(stone, client.visitorId) });
       client.send(payload);
+      recipients++;
     }
+    logEvent("broadcast", who, `stone #${stone.id} to ${recipients} client(s)`);
   });
 });
 

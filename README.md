@@ -8,22 +8,24 @@ time, and that's still there tomorrow.
 
 ## What "good" means here
 
-Good means the three things the brief actually asks for are true, and checked,
-not just claimed: a stone someone drops is visible on every other open session
-within about a second, with nobody reloading anything; what gets dropped
-survives a restart or a redeploy, not just the current tab; and two visitors
-can tell their stones apart from each other without either of them signing up
-for anything. `spec/invariants.test.ts` and `spec/cairn.test.ts` enforce the
-checkable parts of that directly against the running app — real-time
-broadcast, cross-session persistence, and rejection of malformed input are all
-exercised over the actual `/ws` protocol, not mocked. Whether the *interaction*
-is actually good — whether dropping a stone feels satisfying, whether watching
-someone else's stone land reads as "someone's here" rather than as a
-notification, whether keeping a carried stone private instead of broadcasting
-it live ever reads as a quiet page instead of a shared one — isn't something a
-test can decide. I judged that by using it myself from two browser windows
-side by side and asking whether I noticed the other one without it announcing
-itself.
+Good means the four things the brief and crit ask for are true, and checked,
+not just claimed: a stone someone drops is visible on every other open
+session within about a second; what gets dropped survives a restart or
+redeploy; two visitors can tell their stones apart without signing up for
+anything; and who may see and change what is decided by the server, never
+assumed from whatever a client claims. `spec/invariants.test.ts` and
+`spec/cairn.test.ts` enforce this against the running `/ws` protocol:
+broadcast, persistence, malformed input rejected, two cookie jars told apart,
+a tampered cookie never becoming someone else's, a forged `visitorId` or
+`mine` field ignored, and no stone ever movable, editable, or deletable by
+anyone. `spec/logging.test.ts` checks a placement's log line names the
+visitor by pseudonym, never by cookie id. In one sentence: everyone sees
+every stone, only its real owner is told "this is yours," and each visitor
+may place one stone per Canberra day
+(`docs/adr/0004-who-may-see-and-change-what.md`). Whether the *interaction*
+is actually good — satisfying to drop, or reading as "someone's here" rather
+than a notification — isn't something a test can decide. I judged that
+myself, from two browser windows side by side.
 
 ## What I read while deciding
 
