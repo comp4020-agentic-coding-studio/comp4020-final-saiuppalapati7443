@@ -147,3 +147,12 @@ work today.
   explicitly drained before any `nextMessage()` call is trusted to mean "the
   next *new* thing," and any queue-length assertion needs every expected
   prior broadcast drained first.
+
+## Forgotten web (/forgotten-web/)
+
+Crit 1 make-up. Plain HTML/CSS, no JavaScript, GeoCities-era rules (system
+fonts, loud background, bright/visited-purple links, table-style centred
+layout, under-construction banner, hit-counter look, webring footer,
+CSS-only marquee off under prefers-reduced-motion). No invented visitors,
+testimonials or quotes; all voices are mine. Must work at 390px with no
+horizontal scroll.
