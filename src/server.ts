@@ -149,6 +149,12 @@ const server = createServer((req, res) => {
     return;
   }
 
+  if (decoded === "/forgotten-web/" || decoded === "/forgotten-web") {
+    if (serveFile(res, PUBLIC_DIR, "forgotten-web/index.html")) return;
+    res.writeHead(404).end();
+    return;
+  }
+
   if (decoded === "/readme/" || decoded === "/readme") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(readmePage());

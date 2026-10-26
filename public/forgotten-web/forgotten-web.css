@@ -1,0 +1,192 @@
+/* A Shrine to Lost Umbrellas --- styled like it's 1998. */
+
+:root {
+  --ink: #1a0033;
+  --paper: #fffbe6;
+  --link: #0000ee;
+  --visited: #800080;
+  --accent: #ff00aa;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--ink);
+  background-color: #fcefc7;
+  background-image:
+    radial-gradient(circle at 10px 10px, rgba(255, 0, 170, 0.15) 2px, transparent 2px),
+    radial-gradient(circle at 30px 30px, rgba(0, 0, 238, 0.12) 2px, transparent 2px);
+  background-size: 40px 40px;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive;
+  color: var(--accent);
+  text-shadow: 1px 1px 0 #fff, 2px 2px 0 #000;
+}
+
+main {
+  max-width: 42rem;
+  margin: 0 auto;
+  background-color: var(--paper);
+  border: 4px double var(--ink);
+  padding: 1.5rem;
+}
+
+a {
+  color: var(--link);
+}
+
+a:visited {
+  color: var(--visited);
+}
+
+a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+hr {
+  border: none;
+  border-top: 3px groove var(--accent);
+  margin: 1.5rem 0;
+}
+
+/* Site chrome: table-style centred layout */
+.page-frame {
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+header,
+footer {
+  display: table-row;
+}
+
+header > *,
+footer > * {
+  display: table-cell;
+  text-align: center;
+}
+
+nav[aria-label="Primary"] {
+  background-color: var(--ink);
+  padding: 0.5rem;
+}
+
+nav[aria-label="Primary"] a {
+  color: #ffff00;
+  font-weight: bold;
+  margin: 0 0.5rem;
+  text-decoration: none;
+}
+
+nav[aria-label="Primary"] a:visited {
+  color: #ffff66;
+}
+
+/* "Under construction" banner */
+.under-construction {
+  display: block;
+  width: fit-content;
+  margin: 1rem auto;
+  padding: 0.5rem 1rem;
+  background: repeating-linear-gradient(
+    45deg,
+    #ffcc00,
+    #ffcc00 10px,
+    #000 10px,
+    #000 20px
+  );
+  color: #000;
+  font-weight: bold;
+  font-family: "Comic Sans MS", cursive;
+  text-align: center;
+  border: 3px solid #000;
+}
+
+/* CSS-only marquee: scrolling banner text, off under reduced motion */
+.marquee {
+  overflow: hidden;
+  white-space: nowrap;
+  border: 2px dashed var(--accent);
+  padding: 0.5rem 0;
+  background: #000;
+}
+
+.marquee span {
+  display: inline-block;
+  padding-left: 100%;
+  color: #0f0;
+  font-family: "Courier New", monospace;
+  animation: scroll-left 14s linear infinite;
+}
+
+@keyframes scroll-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee span {
+    animation: none;
+    padding-left: 0;
+  }
+}
+
+/* Hit counter look */
+.hit-counter {
+  display: inline-block;
+  font-family: "Courier New", monospace;
+  background: #000;
+  color: #0f0;
+  padding: 0.25rem 0.5rem;
+  letter-spacing: 0.2em;
+  border: 2px inset #666;
+}
+
+/* Webring footer */
+.webring {
+  font-size: 0.9rem;
+  background: var(--ink);
+  color: #fff;
+  padding: 0.75rem;
+}
+
+.webring a {
+  color: #ffff00;
+}
+
+.webring a:visited {
+  color: #ffff66;
+}
+
+ul.sightings li {
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 420px) {
+  body {
+    padding: 0.5rem;
+  }
+
+  main {
+    padding: 1rem;
+  }
+
+  nav[aria-label="Primary"] a {
+    display: inline-block;
+    margin: 0.25rem;
+  }
+}
