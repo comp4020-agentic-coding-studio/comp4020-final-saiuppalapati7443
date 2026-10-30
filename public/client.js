@@ -6,9 +6,14 @@ const countEl = document.getElementById("count");
 const carryStone = document.getElementById("carry-stone");
 const carryHint = document.getElementById("carry-hint");
 
-let stoneCount = 0;
+// Keyed by id so a reconnect's "state" push (laptop sleep, network blip,
+// server restart — client.js's own "close" handler reconnects automatically)
+// can render exactly the server's current set without duplicating whatever
+// was already landed from before the drop.
+const landedStones = new Map();
 
 function updateCount() {
+  const stoneCount = landedStones.size;
   countEl.textContent =
     stoneCount === 1 ? "1 stone placed so far" : `${stoneCount} stones placed so far`;
 }
@@ -56,13 +61,26 @@ function landStone(stone) {
     });
   });
 
-  stoneCount += 1;
+  landedStones.set(stone.id, el);
   updateCount();
+}
+
+// A reconnect's "state" push repeats every stone already landed before the
+// gap, plus any dropped during it — landing only the ones not already in
+// landedStones renders exactly that set instead of duplicating the overlap.
+function renderState(stones) {
+  for (const stone of stones) {
+    if (!landedStones.has(stone.id)) landStone(stone);
+  }
 }
 
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  // Exposed only so a browser test can force a reconnect deterministically
+  // (closing the real socket) instead of guessing how long a simulated
+  // network drop takes to surface as a "close" event.
+  window.__cairnSocketForTest = ws;
 
   // Reported once so a first-time arrival can be logged with the viewport it
   // actually showed up on (server-side, see src/server.ts) — purely
@@ -74,10 +92,13 @@ function connect() {
   ws.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.type === "state") {
-      for (const stone of message.stones) landStone(stone);
+      renderState(message.stones);
       if (message.placedToday) markPlacedToday();
     } else if (message.type === "stone") {
-      landStone(message.stone);
+      // A reconnect can race the server's own broadcast arriving just before
+      // the fresh connection's "state" snapshot (or vice versa) — whichever
+      // arrives second must not re-land a stone the first already drew.
+      if (!landedStones.has(message.stone.id)) landStone(message.stone);
       if (message.stone.mine) markPlacedToday();
     }
   });

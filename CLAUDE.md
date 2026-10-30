@@ -147,6 +147,21 @@ work today.
   explicitly drained before any `nextMessage()` call is trusted to mean "the
   next *new* thing," and any queue-length assertion needs every expected
   prior broadcast drained first.
+- **2026-10-30: a reconnect duplicated every already-landed stone.**
+  `public/client.js`'s `"state"` handler called `landStone()` for every stone
+  the server sent, with nothing tracking what was already in the DOM — so a
+  reconnect (laptop sleep, network blip, a server restart) that resent the
+  same full snapshot on top of stones the page had already drawn doubled the
+  pile and the count. Caught first by a Playwright test
+  (`spec/reconnect.browser.test.ts`) that forces the client's real
+  `WebSocket` closed and watches `.stone` elements in the actual DOM — the
+  WebSocket-level checks in `spec/cairn.test.ts` never render anything, so
+  they couldn't have caught this. Fixed by keying landed stones in a `Map`
+  by id: `"state"` renders only ids not already in the map, and a `"stone"`
+  broadcast is ignored if its id is already there (covers the reconnect
+  racing the server's own broadcast either order). Rule: any place a client
+  redraws from a full server snapshot needs to dedupe against what's already
+  rendered, not assume a snapshot only ever arrives into an empty page.
 
 ## Forgotten web (/forgotten-web/)
 
