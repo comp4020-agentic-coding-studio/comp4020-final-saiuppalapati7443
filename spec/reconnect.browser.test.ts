@@ -25,16 +25,28 @@ it("shows exactly one .stone element per stone after a reconnect, never a duplic
   await page.waitForSelector("#carry-stone");
 
   // Drop one stone from this same session so there's something to duplicate.
+  // Other spec/*.browser.test.ts files run concurrently against the same
+  // shared app and drop their own stones, which broadcast to this page too —
+  // so this counts elements for *this test's own* stone id specifically
+  // (client.js tags each with data-stone-id), not the page's total .stone
+  // count, which the dedup bug wouldn't be the only thing moving.
   const carryBox = await page.locator("#carry-stone").boundingBox();
   const cairnBox = await page.locator("#cairn").boundingBox();
   if (!carryBox || !cairnBox) throw new Error("expected both elements to be visible");
+  const stoneCountBeforeDrop = await page.locator(".stone").count();
   await page.mouse.move(carryBox.x + carryBox.width / 2, carryBox.y + carryBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(cairnBox.x + cairnBox.width / 2, cairnBox.y + cairnBox.height / 2, { steps: 5 });
   await page.mouse.up();
-  await page.waitForFunction(() => document.querySelectorAll(".stone").length >= 1);
+  await page.waitForFunction(
+    (before) => document.querySelectorAll(".stone").length > before,
+    stoneCountBeforeDrop,
+  );
 
-  const stoneCountBefore = await page.locator(".stone").count();
+  const stoneId = await page.evaluate(() => {
+    const els = document.querySelectorAll(".stone[data-stone-id]");
+    return els[els.length - 1].getAttribute("data-stone-id");
+  });
 
   // Force the client's WebSocket to close and reconnect, the same recovery
   // path a real network blip or server restart triggers (client.js's own
@@ -50,8 +62,8 @@ it("shows exactly one .stone element per stone after a reconnect, never a duplic
   // "state" push on the new connection.
   await page.waitForTimeout(2000);
 
-  const stoneCountAfter = await page.locator(".stone").count();
-  expect(stoneCountAfter, "a reconnect must not duplicate the already-landed stones").toBe(stoneCountBefore);
+  const matchingAfter = await page.locator(`.stone[data-stone-id="${stoneId}"]`).count();
+  expect(matchingAfter, "a reconnect must not duplicate this test's already-landed stone").toBe(1);
 
   await page.close();
 });

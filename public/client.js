@@ -28,6 +28,23 @@ function markPlacedToday() {
   carryHint.textContent = "You've placed your stone for today — come back tomorrow.";
 }
 
+// While the socket isn't open, a drag landing on the pile would otherwise
+// silently do nothing (drop() no-ops when the socket isn't OPEN) — this
+// makes that visible instead, and stops the carry stone from inviting a drag
+// that can't go anywhere. Cleared by onConnected() the moment a fresh
+// connection's "open" fires.
+function markDisconnected() {
+  carryStone.setAttribute("aria-disabled", "true");
+  carryStone.tabIndex = -1;
+  carryHint.textContent = "Reconnecting…";
+}
+
+function onConnected() {
+  carryStone.removeAttribute("aria-disabled");
+  carryStone.tabIndex = 0;
+  carryHint.textContent = "Drag onto the pile above, or press Enter / Space";
+}
+
 // The ground line in style.css sits at 70% of the container's height; stones
 // pile up from there, nudged higher as more land near the same spot.
 function restingTop(stone, size) {
@@ -39,6 +56,7 @@ function restingTop(stone, size) {
 function landStone(stone) {
   const el = document.createElement("div");
   el.className = "stone";
+  el.dataset.stoneId = String(stone.id);
   const size = 22 + (stone.id % 5) * 3;
   const restTransform = `translateY(0) scale(1) rotate(${stone.rotation}deg)`;
 
@@ -86,6 +104,7 @@ function connect() {
   // actually showed up on (server-side, see src/server.ts) — purely
   // descriptive, never used to decide anything.
   ws.addEventListener("open", () => {
+    onConnected();
     ws.send(JSON.stringify({ type: "hello", width: window.innerWidth, height: window.innerHeight }));
   });
 
@@ -100,10 +119,21 @@ function connect() {
       // arrives second must not re-land a stone the first already drew.
       if (!landedStones.has(message.stone.id)) landStone(message.stone);
       if (message.stone.mine) markPlacedToday();
+    } else if (message.type === "refused") {
+      // The server enforces the one-stone-a-day limit; this is purely so a
+      // visitor who still tries (the UI should already have disabled the
+      // carry stone, but a drop in flight when the limit landed is possible)
+      // is told why nothing happened, instead of it just silently not
+      // landing.
+      if (message.reason === "already-placed-today") markPlacedToday();
     }
   });
 
   ws.addEventListener("close", () => {
+    // Never pretend a drop landed once the socket this function closed over
+    // is gone — markDisconnected() both shows that and stops a drag from
+    // starting against a closed socket.
+    markDisconnected();
     setTimeout(connect, 1000);
   });
 

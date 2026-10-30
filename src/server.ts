@@ -273,6 +273,10 @@ wss.on("connection", (ws: ConnectedSocket) => {
     // can't bypass the limit by sending a different id in the message.
     if (hasDroppedToday(viewerVisitorId)) {
       logEvent("refuse", who, "tried to place a second stone today");
+      // Told only to the dropping client, never broadcast — a refusal isn't
+      // shared state, it's a private answer to a private request, the same
+      // as the "mine" flag is never shown to anyone but its owner.
+      ws.send(JSON.stringify({ type: "refused", reason: "already-placed-today" }));
       return;
     }
 

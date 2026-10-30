@@ -162,6 +162,26 @@ work today.
   racing the server's own broadcast either order). Rule: any place a client
   redraws from a full server snapshot needs to dedupe against what's already
   rendered, not assume a snapshot only ever arrives into an empty page.
+- **2026-10-30: a drop silently did nothing while disconnected, and a
+  refused drop told the visitor nothing.** `drop()` in `public/client.js`
+  checked `socket.readyState === OPEN` before sending, which correctly
+  stopped a message going nowhere, but gave a visitor no sign their drag
+  hadn't landed — the carry stone stayed interactive and the hint text never
+  changed, so a drop during a network blip looked identical to a successful
+  one. Separately, the server already refused a second same-day drop
+  (`hasDroppedToday`) but only logged it — the dropping client got no
+  response at all, indistinguishable from the message being lost. Caught by
+  two Playwright tests in `spec/connection-status.browser.test.ts`: one
+  forces the socket closed under `context.setOffline(true)` and polls the
+  real hint text and `aria-disabled`; the other reads actual WebSocket
+  frames (not just the hint text) so it can't pass off the unrelated `mine`
+  flag a successful drop already sets. Fixed with a `"refused"` message type
+  sent only to the dropping client (never broadcast — a refusal isn't shared
+  state), plus `markDisconnected()`/`onConnected()` toggling the hint text
+  and `aria-disabled` on the socket's own `open`/`close` events. Rule: a
+  client-side guard that silently no-ops on bad state (socket not open, a
+  request about to be refused) needs a visible signal on the page, not just
+  code that correctly declines to do the wrong thing.
 
 ## Forgotten web (/forgotten-web/)
 
