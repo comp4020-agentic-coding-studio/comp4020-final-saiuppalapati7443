@@ -30,6 +30,11 @@ jobs:
         with:
           cache: true
       - run: pnpm install --frozen-lockfile
+      - name: Install Chromium for the Playwright specs
+        # spec/*.browser.test.ts drive a real browser (vitest's HTTP/WS-level
+        # checks can't see the DOM); the runner needs Chromium's binary and
+        # its system libs, which `pnpm install` alone doesn't fetch.
+        run: npx playwright install --with-deps chromium
       - name: Build and start the app
         # the same image Fly deploys, with a throwaway /data in place of the
         # volume; the spec runs against it
