@@ -40,6 +40,15 @@ work today.
   shorthand), don't use that construct — don't add the build step.
 - A new `spec/*.test.ts` file tests a claim actually written in README.md, not
   an implementation detail nobody promised.
+- A dropped stone must reach every other open session within about a second —
+  `spec/cairn.test.ts`'s "delivers a dropped stone to another open session
+  within 1000ms" is the floor this guarantees. No change may add a delay,
+  batching, or polling to the broadcast path (`wss.on("connection", ...)`'s
+  `ws.on("message", ...)` handler in `src/server.ts`, which sends a `"stone"`
+  message to every open client synchronously, in the same tick as the insert)
+  to make it cheaper, smoother, or more efficient — a queued or debounced
+  broadcast would still be "eventually consistent," but README promises "the
+  same moment," not eventually.
 
 ## What a change must never break
 
