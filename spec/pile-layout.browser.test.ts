@@ -114,11 +114,14 @@ afterAll(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-it("renders the same pile at the same fractional position on a phone and a laptop viewport", async () => {
+it("renders the same pile at the same fractional position on a phone and a desktop viewport", async () => {
   for (const x of [0.15, 0.2, 0.3, 0.45, 0.5, 0.55, 0.7, 0.8, 0.85]) {
     await dropStone(x);
   }
 
+  // 390x844 and 1920x1080 are the course's two marking viewports (see
+  // docs/testing/final-marker-pass.md) — the pile has to match exactly
+  // between the two sizes markers actually use, not just any two sizes.
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await phone.goto(`http://localhost:${port}/`);
   await phone.waitForFunction(() => document.querySelectorAll(".stone").length >= 9, undefined, { timeout: 10_000 });
@@ -126,30 +129,30 @@ it("renders the same pile at the same fractional position on a phone and a lapto
   const phoneFractions = await stoneFractions(phone);
   await phone.close();
 
-  const laptop = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await laptop.goto(`http://localhost:${port}/`);
-  await laptop.waitForFunction(() => document.querySelectorAll(".stone").length >= 9, undefined, {
+  const desktop = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await desktop.goto(`http://localhost:${port}/`);
+  await desktop.waitForFunction(() => document.querySelectorAll(".stone").length >= 9, undefined, {
     timeout: 10_000,
   });
-  await laptop.waitForTimeout(500);
-  const laptopFractions = await stoneFractions(laptop);
-  await laptop.close();
+  await desktop.waitForTimeout(500);
+  const desktopFractions = await stoneFractions(desktop);
+  await desktop.close();
 
   expect(phoneFractions).toHaveLength(9);
-  expect(laptopFractions).toHaveLength(9);
+  expect(desktopFractions).toHaveLength(9);
 
-  const laptopById = new Map(laptopFractions.map((s) => [s.id, s]));
+  const desktopById = new Map(desktopFractions.map((s) => [s.id, s]));
   for (const phoneStone of phoneFractions) {
-    const laptopStone = laptopById.get(phoneStone.id);
-    expect(laptopStone, `stone #${phoneStone.id} must appear in both viewports`).toBeTruthy();
+    const desktopStone = desktopById.get(phoneStone.id);
+    expect(desktopStone, `stone #${phoneStone.id} must appear in both viewports`).toBeTruthy();
     expect(
       phoneStone.xFrac,
       `stone #${phoneStone.id}'s horizontal position must match between viewports`,
-    ).toBeCloseTo(laptopStone!.xFrac, 2);
+    ).toBeCloseTo(desktopStone!.xFrac, 2);
     expect(
       phoneStone.yFrac,
       `stone #${phoneStone.id}'s vertical position must match between viewports`,
-    ).toBeCloseTo(laptopStone!.yFrac, 2);
+    ).toBeCloseTo(desktopStone!.yFrac, 2);
   }
 }, 20_000);
 
@@ -162,9 +165,9 @@ it("lands a live drop from one session at the same relative spot on another sess
   await phone.goto(`http://localhost:${port}/`);
   await phone.waitForSelector("#carry-stone");
 
-  const laptop = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await laptop.goto(`http://localhost:${port}/`);
-  await laptop.waitForSelector("#carry-stone");
+  const desktop = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await desktop.goto(`http://localhost:${port}/`);
+  await desktop.waitForSelector("#carry-stone");
 
   const beforeCount = await phone.locator(".stone").count();
 
@@ -182,13 +185,13 @@ it("lands a live drop from one session at the same relative spot on another sess
     beforeCount,
     { timeout: 5000 },
   );
-  await laptop.waitForFunction(
+  await desktop.waitForFunction(
     (before) => document.querySelectorAll(".stone").length > before,
     beforeCount,
     { timeout: 5000 },
   );
   await phone.waitForTimeout(500);
-  await laptop.waitForTimeout(500);
+  await desktop.waitForTimeout(500);
 
   const newStoneId = await phone.evaluate(() => {
     const els = [...document.querySelectorAll(".stone[data-stone-id]")];
@@ -197,15 +200,15 @@ it("lands a live drop from one session at the same relative spot on another sess
   });
 
   const phoneFractions = await stoneFractions(phone);
-  const laptopFractions = await stoneFractions(laptop);
+  const desktopFractions = await stoneFractions(desktop);
   const phoneStone = phoneFractions.find((s) => s.id === newStoneId);
-  const laptopStone = laptopFractions.find((s) => s.id === newStoneId);
+  const desktopStone = desktopFractions.find((s) => s.id === newStoneId);
   expect(phoneStone, "the dropped stone must render on the dropping session").toBeTruthy();
-  expect(laptopStone, "the dropped stone must render on the other session too").toBeTruthy();
+  expect(desktopStone, "the dropped stone must render on the other session too").toBeTruthy();
 
-  expect(phoneStone!.xFrac).toBeCloseTo(laptopStone!.xFrac, 2);
-  expect(phoneStone!.yFrac).toBeCloseTo(laptopStone!.yFrac, 2);
+  expect(phoneStone!.xFrac).toBeCloseTo(desktopStone!.xFrac, 2);
+  expect(phoneStone!.yFrac).toBeCloseTo(desktopStone!.yFrac, 2);
 
   await phone.close();
-  await laptop.close();
+  await desktop.close();
 }, 15_000);

@@ -233,7 +233,7 @@ work today.
   deliberate: ids are permanent and globally ordered (see the `"stone"`
   broadcast/`"state"` race already noted above), so two sessions that have
   seen the same set of stones always compute the identical pile, and a 390px
-  phone and a 1280px laptop show the same pile shape at the same *fractional*
+  phone and a 1920px desktop show the same pile shape at the same *fractional*
   position (`#cairn`'s CSS `aspect-ratio: 5 / 3` keeps the box's own ratio
   matched to the world box's, so the world→pixel conversion is a uniform
   scale with no distortion). A `ResizeObserver` reruns `relayout()` (never
@@ -245,8 +245,9 @@ work today.
   `#cairn` and `#cairn`'s own `overflow-y: auto` turns it into a scrollbar,
   with `scrollNewestIntoView()` keeping the latest stone on screen as it
   lands. Verified with `spec/pile-layout.browser.test.ts`: two sessions at
-  390×844 and 1280×800 against the same isolated server must report every
-  stone's position, as a fraction of `#cairn`'s own box, within 2 decimal
+  390×844 and 1920×1080 — the course's two marking viewports, see
+  `docs/testing/final-marker-pass.md` — against the same isolated server must
+  report every stone's position, as a fraction of `#cairn`'s own box, within 2 decimal
   places of each other — both for a seeded pile and for a stone dropped live
   from one session and watched land on the other. Confirmed red first by
   making stone size depend on `window.innerWidth` (a plausible real mistake —
@@ -328,6 +329,29 @@ work today.
   the-other-page; each needs its own way back to the rest of the app, and
   that has to be checked by actually starting from the page a marker or a
   cold visitor would, not just from `/` outward.
+- **2026-11-01: the pile-layout test and screenshots checked 1280×800, a
+  size nobody actually marks at.** `spec/pile-layout.browser.test.ts` and
+  `docs/screenshots/after-stacking-*.png` compared the phone viewport
+  against a 1280×800 "laptop" — a plausible guess at a second real size, but
+  not the one that matters: the course's actual marking environment (found
+  by reading the assessment page, see `docs/testing/final-marker-pass.md`)
+  is **390×844 and 1920×1080**, nothing in between. A desktop pile that
+  matched the phone pile at 1280×800 was never guaranteed to still match it
+  at 1920×1080 — `relayout()`'s math is a uniform scale either way, so in
+  practice it does, but the test was checking a size that isn't the
+  contract. Fixed by changing both `newPage({viewport: ...})` calls in
+  `spec/pile-layout.browser.test.ts` from 1280×800 to 1920×1080, renaming
+  the local variable from `laptop` to `desktop` to match, and retaking
+  `after-stacking-1920.png` (replacing `after-stacking-1280.png`) at the
+  real marking size. `before-stacking-1280.png` was left alone — it's a
+  historical record of the pre-fix bug, not a current test fixture, and the
+  bug it documents (stones overlapping at `id % 18`-derived heights) didn't
+  depend on which viewport exposed it. Rule: when a test or a fixture picks
+  "a phone size and a desktop size" to stand in for "every viewport," check
+  whether the actual contract (a course's marking environment, a browser
+  support matrix, a design spec) names specific sizes before picking
+  plausible-looking ones — two sizes that happen to produce the same result
+  as the real ones is not the same guarantee as testing the real ones.
 
 ## Forgotten web (/forgotten-web/)
 
