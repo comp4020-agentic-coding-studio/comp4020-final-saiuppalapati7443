@@ -249,27 +249,42 @@ work today.
   before being used for anything but final painting — pixels are a rendering
   detail, not where shared layout math should live.
 - **2026-10-31: `spec/logging.test.ts` failed once when the full suite ran
-  together, then passed every time run alone.** Both its tests sent a WS
-  message that causes a log line, then used a fixed `setTimeout` (200ms,
+  together, then passed every time run alone — and the first fix wasn't
+  enough, caught by a real CI failure after pushing it.** Both its tests sent
+  a WS message that causes a log line, then used a fixed `setTimeout` (200ms,
   300ms) as a guess for "the server's had enough time to flush that line to
   stdout" before asserting against `stdout`. That guess holds when this
   test's own spawned server has a core mostly to itself, but the full suite
   runs several other spawned servers and a handful of real Chromium instances
   concurrently — CPU contention can push the actual flush well past a fixed
-  300ms, and vitest's own 5000ms default test timeout was the thing that
-  actually fired, not evidence the log line was wrong. Fixed by replacing
-  both fixed sleeps with `waitForLogLine()`, which polls `stdout` for the
-  specific line each test needs (the `"place"` line; the `"refuse"` line
-  naming this test's own stone id) with a generous explicit 8000ms timeout,
-  plus a 15000ms timeout on each `it()` itself — so each test waits exactly
-  as long as flushing actually takes under whatever load the runner is
-  under, not a fixed guess sized for an uncontended machine. Verified by
-  running the full suite three times in a row with no failures. Rule: a
-  fixed sleep before asserting against a side effect that happens
-  asynchronously on another process is a guess, not a wait — replace it with
-  polling for the actual condition, with its own generous timeout, so a slow
-  but still-correct server fails loud (a clear timeout message) instead of
-  flaky (a seemingly random pass/fail that looks like a real bug).
+  300ms. First fix: replaced both fixed sleeps with `waitForLogLine()`,
+  polling `stdout` for the specific line each test needs, with its own
+  explicit timeout. Verified locally with three full-suite runs, pushed — and
+  CI still failed, with vitest's own generic "Test timed out in 15000ms" at
+  `spec/logging.test.ts:106`, not `waitForLogLine()`'s own message. The first
+  fix only guarded the *last* wait in each test; every earlier step (the raw
+  WebSocket `"open"` event, draining the initial `"state"` push, the owner's
+  own drop broadcast) was still a bare `await new Promise(...)` with no
+  timeout and no diagnostic at all — under CI's real contention (heavier than
+  what three local runs happened to hit), one of those easily ate enough of
+  the 15000ms budget that vitest's own wrapper fired first, before
+  `waitForLogLine()` ever got a turn to report what it was polling for.
+  Second fix: every wait in the file now goes through one of two helpers
+  (`waitForEvent()` for a single WS event, `waitForLogLine()` for polling
+  `stdout`), each with its own named, generous timeout (15000ms /
+  25000ms) and a message identifying exactly what was being waited for — no
+  bare `await new Promise(...)` left anywhere in the file. Reproduced the
+  original CI failure locally by running the suite under six CPU-pinned
+  busy-loops (`while true; do :; done`, one per spare core) — the first fix
+  failed exactly as CI had, with a bare "message" event wait timing out, not
+  `waitForLogLine()`. The second fix passed three consecutive full-suite runs
+  under that same artificial load. Rule: when a fix removes one guess (a
+  fixed sleep) but a test still has *other* unguarded waits sitting right
+  next to it, verifying the fix by running the suite a few times on a quiet
+  machine isn't enough — reproduce the actual contention the real failure
+  happened under (busy-loop the spare cores, or just run the full suite
+  concurrently with itself) before trusting a timing fix is complete, and
+  audit every wait in the file, not just the one the stack trace pointed at.
 
 ## Forgotten web (/forgotten-web/)
 

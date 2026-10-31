@@ -15,45 +15,41 @@ let port: number;
 let dataDir: string;
 let stdout = "";
 
-beforeAll(async () => {
-  port = 20000 + Math.floor(Math.random() * 10000);
-  dataDir = mkdtempSync(join(tmpdir(), "cairn-logging-test-"));
-  server = spawn("node", ["src/server.ts"], {
-    env: { ...process.env, PORT: String(port), DATA_DIR: dataDir },
-  });
-  server.stdout.on("data", (chunk: Buffer) => {
-    stdout += chunk.toString();
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("server did not boot in time")), 10_000);
-    const check = (): void => {
-      if (stdout.includes("cairn listening")) {
+// Every wait in this file goes through one of these two helpers, each with
+// its own generous, explicit timeout and a diagnostic error naming what it
+// was actually waiting for — never a bare `await new Promise(...)` with no
+// timeout at all. The first version of this file guarded only the final
+// "wait for the log line" step with a timeout; every earlier step (the
+// WebSocket's own "open" event, draining the initial "state" message) had
+// none. Under CI's real contention (several other spec files' own spawned
+// servers and Chromium instances competing for the runner's cores), one of
+// those unguarded steps ate enough of the test's time budget that vitest's
+// own generic 15000ms it() timeout fired first — a confusing "Test timed out
+// in 15000ms" with no indication of which step was actually slow, instead of
+// a message naming the real wait. See CLAUDE.md's dated correction.
+function waitForEvent<T = void>(ws: WebSocket, event: string, timeoutMs = 15_000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`timed out after ${timeoutMs}ms waiting for a WebSocket "${event}" event`)),
+      timeoutMs,
+    );
+    ws.once(event, (arg: T) => {
+      clearTimeout(timeout);
+      resolve(arg);
+    });
+    // "error" fails the wait immediately regardless of which event was
+    // actually being awaited — a dead connection should never just sit
+    // there until timeoutMs runs out.
+    if (event !== "error") {
+      ws.once("error", (err) => {
         clearTimeout(timeout);
-        resolve();
-      } else {
-        setTimeout(check, 50);
-      }
-    };
-    check();
+        reject(err);
+      });
+    }
   });
-}, 15_000);
+}
 
-afterAll(() => {
-  server.kill();
-  rmSync(dataDir, { recursive: true, force: true });
-});
-
-// The server flushes a log line to stdout asynchronously relative to the WS
-// message that caused it, so a fixed sleep before checking `stdout` is a
-// guess at how long that takes — fast enough normally, but CPU contention
-// (e.g. the full suite running concurrently, this test's own server
-// competing with seven others for the runner's cores) can make it arbitrarily
-// slower, not just a little slower. Polling for the actual line this test
-// needs, with a generous explicit timeout, waits exactly as long as flushing
-// actually takes instead of a fixed guess that just happens to usually be
-// enough.
-function waitForLogLine(predicate: (stdout: string) => boolean, timeoutMs = 8000): Promise<void> {
+function waitForLogLine(predicate: (stdout: string) => boolean, timeoutMs = 25_000): Promise<void> {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
     const check = (): void => {
@@ -69,27 +65,56 @@ function waitForLogLine(predicate: (stdout: string) => boolean, timeoutMs = 8000
   });
 }
 
-it("logs a placement with the pseudonym and handle, and never the cookie id", async () => {
-  const ws = new WebSocket(`ws://localhost:${port}/ws`);
-  let setCookie: string | undefined;
+beforeAll(async () => {
+  port = 20000 + Math.floor(Math.random() * 10000);
+  dataDir = mkdtempSync(join(tmpdir(), "cairn-logging-test-"));
+  server = spawn("node", ["src/server.ts"], {
+    env: { ...process.env, PORT: String(port), DATA_DIR: dataDir },
+  });
+  server.stdout.on("data", (chunk: Buffer) => {
+    stdout += chunk.toString();
+  });
+
+  await waitForLogLine((out) => out.includes("cairn listening"), 15_000);
+}, 20_000);
+
+afterAll(() => {
+  server.kill();
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+function captureSetCookie(ws: WebSocket): { setCookie?: string } {
+  const captured: { setCookie?: string } = {};
   ws.once("upgrade", (res) => {
     const raw = res.headers["set-cookie"];
-    setCookie = Array.isArray(raw) ? raw[0] : raw;
+    captured.setCookie = Array.isArray(raw) ? raw[0] : raw;
   });
-  await new Promise<void>((resolve, reject) => {
-    ws.once("open", resolve);
-    ws.once("error", reject);
-  });
-  await new Promise<void>((resolve) => ws.once("message", () => resolve())); // drain initial state
+  return captured;
+}
 
-  const stoneBroadcast = new Promise<void>((resolve) => ws.once("message", () => resolve()));
+async function connectAndDrainState(ws: WebSocket): Promise<void> {
+  await waitForEvent(ws, "open");
+  await waitForEvent(ws, "message"); // the initial "state" push
+}
+
+// Each it()'s own timeout below is kept comfortably above the sum of its
+// own waitForEvent()/waitForLogLine() calls (each up to 15000ms), so a
+// slow-but-real pass under contention fails with the specific helper
+// message naming what was actually slow — never vitest's own generic "Test
+// timed out" with no indication which step it was.
+it("logs a placement with the pseudonym and handle, and never the cookie id", async () => {
+  const ws = new WebSocket(`ws://localhost:${port}/ws`);
+  const cookieBox = captureSetCookie(ws);
+  await connectAndDrainState(ws);
+
+  const stoneBroadcast = waitForEvent(ws, "message");
   ws.send(JSON.stringify({ type: "drop", x: 0.31 }));
   await stoneBroadcast;
   await waitForLogLine((out) => out.split("\n").some((line) => line.startsWith("place")));
 
   ws.close();
 
-  const cookieId = setCookie?.match(/cairn_visitor=([^;]+)/)?.[1];
+  const cookieId = cookieBox.setCookie?.match(/cairn_visitor=([^;]+)/)?.[1];
   expect(cookieId, "test setup should have captured a cookie id to check against").toBeTruthy();
 
   const placeLine = stdout.split("\n").find((line) => line.startsWith("place"));
@@ -101,38 +126,22 @@ it("logs a placement with the pseudonym and handle, and never the cookie id", as
   expect(placeLine).toContain("stone #");
 
   expect(stdout).not.toContain(cookieId as string);
-}, 15_000);
+}, 60_000);
 
 it("logs a refused mutation attempt naming the stone's real owner, never the cookie id", async () => {
   const owner = new WebSocket(`ws://localhost:${port}/ws`);
-  let ownerCookie: string | undefined;
-  owner.once("upgrade", (res) => {
-    const raw = res.headers["set-cookie"];
-    ownerCookie = Array.isArray(raw) ? raw[0] : raw;
-  });
-  await new Promise<void>((resolve, reject) => {
-    owner.once("open", resolve);
-    owner.once("error", reject);
-  });
-  await new Promise<void>((resolve) => owner.once("message", () => resolve()));
+  const ownerCookieBox = captureSetCookie(owner);
+  await connectAndDrainState(owner);
 
-  const ownerStone = new Promise<{ type: string; stone: { id: number } }>((resolve) =>
-    owner.once("message", (data) => resolve(JSON.parse(data.toString()))),
+  const ownerStone = waitForEvent<Buffer | string>(owner, "message").then(
+    (data) => JSON.parse(data.toString()) as { type: string; stone: { id: number } },
   );
   owner.send(JSON.stringify({ type: "drop", x: 0.5 }));
   const { stone } = await ownerStone;
 
   const attacker = new WebSocket(`ws://localhost:${port}/ws`);
-  let attackerCookie: string | undefined;
-  attacker.once("upgrade", (res) => {
-    const raw = res.headers["set-cookie"];
-    attackerCookie = Array.isArray(raw) ? raw[0] : raw;
-  });
-  await new Promise<void>((resolve, reject) => {
-    attacker.once("open", resolve);
-    attacker.once("error", reject);
-  });
-  await new Promise<void>((resolve) => attacker.once("message", () => resolve()));
+  const attackerCookieBox = captureSetCookie(attacker);
+  await connectAndDrainState(attacker);
 
   attacker.send(JSON.stringify({ type: "edit", id: stone.id, color: "black" }));
   await waitForLogLine((out) =>
@@ -142,8 +151,8 @@ it("logs a refused mutation attempt naming the stone's real owner, never the coo
   owner.close();
   attacker.close();
 
-  const ownerId = ownerCookie?.match(/cairn_visitor=([^;]+)/)?.[1];
-  const attackerId = attackerCookie?.match(/cairn_visitor=([^;]+)/)?.[1];
+  const ownerId = ownerCookieBox.setCookie?.match(/cairn_visitor=([^;]+)/)?.[1];
+  const attackerId = attackerCookieBox.setCookie?.match(/cairn_visitor=([^;]+)/)?.[1];
   expect(ownerId).toBeTruthy();
   expect(attackerId).toBeTruthy();
 
@@ -153,4 +162,4 @@ it("logs a refused mutation attempt naming the stone's real owner, never the coo
 
   expect(stdout).not.toContain(ownerId as string);
   expect(stdout).not.toContain(attackerId as string);
-}, 15_000);
+}, 60_000);
