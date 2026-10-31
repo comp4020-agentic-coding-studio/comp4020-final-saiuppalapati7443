@@ -1,5 +1,17 @@
 # ADR 0002: Visitor identity — a derived color, not an account
 
+**Status: amended by [ADR 0004](0004-who-may-see-and-change-what.md).**
+What changed: the identity *transport* — a client-generated id kept in
+`localStorage` and sent in the WebSocket message body (below) became a
+server-set, `HttpOnly` cookie, read only on the HTTP/upgrade request, never
+trusted from a message body. What didn't change: identity is still exactly
+one derived color per stone, still anonymous, still no accounts, no login, no
+PII. The reasoning below (why not accounts, why a passive presence signal
+instead of a visitor list) is still the reasoning; only "where the server
+gets the id it uses" moved, once the app needed real authorization decisions
+(a per-day limit, stone immutability) that a client-controlled value can't be
+trusted to gate. See ADR 0004 for why.
+
 ## Context
 
 The brief leaves "what counts as a person" open: "an account, a pseudonym, or
