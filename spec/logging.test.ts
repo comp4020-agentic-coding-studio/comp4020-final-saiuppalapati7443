@@ -44,6 +44,31 @@ afterAll(() => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
+// The server flushes a log line to stdout asynchronously relative to the WS
+// message that caused it, so a fixed sleep before checking `stdout` is a
+// guess at how long that takes — fast enough normally, but CPU contention
+// (e.g. the full suite running concurrently, this test's own server
+// competing with seven others for the runner's cores) can make it arbitrarily
+// slower, not just a little slower. Polling for the actual line this test
+// needs, with a generous explicit timeout, waits exactly as long as flushing
+// actually takes instead of a fixed guess that just happens to usually be
+// enough.
+function waitForLogLine(predicate: (stdout: string) => boolean, timeoutMs = 8000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + timeoutMs;
+    const check = (): void => {
+      if (predicate(stdout)) {
+        resolve();
+      } else if (Date.now() > deadline) {
+        reject(new Error(`timed out after ${timeoutMs}ms waiting for a log line in:\n${stdout}`));
+      } else {
+        setTimeout(check, 25);
+      }
+    };
+    check();
+  });
+}
+
 it("logs a placement with the pseudonym and handle, and never the cookie id", async () => {
   const ws = new WebSocket(`ws://localhost:${port}/ws`);
   let setCookie: string | undefined;
@@ -60,7 +85,7 @@ it("logs a placement with the pseudonym and handle, and never the cookie id", as
   const stoneBroadcast = new Promise<void>((resolve) => ws.once("message", () => resolve()));
   ws.send(JSON.stringify({ type: "drop", x: 0.31 }));
   await stoneBroadcast;
-  await new Promise((resolve) => setTimeout(resolve, 200)); // let the log line flush
+  await waitForLogLine((out) => out.split("\n").some((line) => line.startsWith("place")));
 
   ws.close();
 
@@ -76,7 +101,7 @@ it("logs a placement with the pseudonym and handle, and never the cookie id", as
   expect(placeLine).toContain("stone #");
 
   expect(stdout).not.toContain(cookieId as string);
-});
+}, 15_000);
 
 it("logs a refused mutation attempt naming the stone's real owner, never the cookie id", async () => {
   const owner = new WebSocket(`ws://localhost:${port}/ws`);
@@ -110,7 +135,9 @@ it("logs a refused mutation attempt naming the stone's real owner, never the coo
   await new Promise<void>((resolve) => attacker.once("message", () => resolve()));
 
   attacker.send(JSON.stringify({ type: "edit", id: stone.id, color: "black" }));
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await waitForLogLine((out) =>
+    out.split("\n").some((line) => line.startsWith("refuse") && line.includes(`stone #${stone.id}`)),
+  );
 
   owner.close();
   attacker.close();
@@ -126,4 +153,4 @@ it("logs a refused mutation attempt naming the stone's real owner, never the coo
 
   expect(stdout).not.toContain(ownerId as string);
   expect(stdout).not.toContain(attackerId as string);
-});
+}, 15_000);

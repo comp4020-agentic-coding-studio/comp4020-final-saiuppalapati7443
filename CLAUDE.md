@@ -243,6 +243,28 @@ work today.
   to agree on has to be converted to a shared, resolution-independent unit
   before being used for anything but final painting — pixels are a rendering
   detail, not where shared layout math should live.
+- **2026-10-31: `spec/logging.test.ts` failed once when the full suite ran
+  together, then passed every time run alone.** Both its tests sent a WS
+  message that causes a log line, then used a fixed `setTimeout` (200ms,
+  300ms) as a guess for "the server's had enough time to flush that line to
+  stdout" before asserting against `stdout`. That guess holds when this
+  test's own spawned server has a core mostly to itself, but the full suite
+  runs several other spawned servers and a handful of real Chromium instances
+  concurrently — CPU contention can push the actual flush well past a fixed
+  300ms, and vitest's own 5000ms default test timeout was the thing that
+  actually fired, not evidence the log line was wrong. Fixed by replacing
+  both fixed sleeps with `waitForLogLine()`, which polls `stdout` for the
+  specific line each test needs (the `"place"` line; the `"refuse"` line
+  naming this test's own stone id) with a generous explicit 8000ms timeout,
+  plus a 15000ms timeout on each `it()` itself — so each test waits exactly
+  as long as flushing actually takes under whatever load the runner is
+  under, not a fixed guess sized for an uncontended machine. Verified by
+  running the full suite three times in a row with no failures. Rule: a
+  fixed sleep before asserting against a side effect that happens
+  asynchronously on another process is a guess, not a wait — replace it with
+  polling for the actual condition, with its own generous timeout, so a slow
+  but still-correct server fails loud (a clear timeout message) instead of
+  flaky (a seemingly random pass/fail that looks like a real bug).
 
 ## Forgotten web (/forgotten-web/)
 
