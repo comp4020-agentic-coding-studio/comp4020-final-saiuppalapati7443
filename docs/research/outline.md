@@ -166,17 +166,22 @@ the counter-case section, in that order.
 
 ## Illustration (one to two sentences, not the argument)
 
-Real example, verified against `CLAUDE.md`'s own corrections log (not the
-Q6 draft, which didn't match the repo's actual history): two new spec tests
-for the project's identity rules silently read a stale queued message
-instead of the new broadcast they were supposed to wait for — one test
-checked `b.queue`'s length right after a broadcast that had already landed
-in it unread, the other consumed an already-queued `"state"` push instead
-of the `"stone"` broadcast its assertion actually needed — so both tests
-went green when the behaviour they were meant to guard was actually
-untested. Caught only by the deliberate-break exercise (breaking the code
-on purpose and watching a test fail to turn red), not by reading the tests
-first.
+Verified against `CLAUDE.md`'s own corrections log: two identity tests in
+my project read a stale queued message instead of the new broadcast they
+were meant to wait for, so they went green when they should have failed.
+The deliberate-break exercise caught it, not reading the test first.
+
+**Note on a separate, unrelated claim in the repo:** `reflections/crit-10.md`
+and `PROCESS.md` describe a different incident — the "forged visitorId"
+test's first version "only checked what a different visitor saw, not what
+the person who actually dropped the stone saw." That claim is not supported
+by the git history of that specific test (it was added already checking
+both sides) and is not the illustration used above. Those two files are the
+only places in the repo making that claim; `reflections/crit-10.md` is a
+past, already-submitted crit and is left untouched. `PROCESS.md` will be
+rewritten later to describe the test's history only as the git log and
+`CLAUDE.md` record it — don't use the crit-10/PROCESS.md version of this
+story in the research note.
 
 **Flag:** keep this to the two sentences above in the actual note — it's
 illustration, not evidence for a claim; don't let it expand into a project
