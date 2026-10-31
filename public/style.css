@@ -164,3 +164,9 @@ main.readme,
 .readme img {
   max-width: 100%;
 }
+
+.readme-back {
+  max-width: 40rem;
+  margin: 1rem auto 0;
+  padding: 0 1.5rem;
+}

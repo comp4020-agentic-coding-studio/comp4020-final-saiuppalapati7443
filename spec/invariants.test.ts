@@ -59,3 +59,19 @@ it("publishes README.md at /readme/", async () => {
     from = at + normalise(heading).length;
   }
 });
+
+// A newcomer plausibly lands on /readme/ first (a shared link, a marker
+// reading the brief before the app), and the page itself has to get them
+// back to the actual cairn — README.md's own content has no reason to link
+// to the site it's hosted on, so this is about readmePage()'s wrapper HTML
+// in src/server.ts, not README.md's content.
+it("links back to the app from /readme/", async () => {
+  const res = await fetch(new URL("/readme/", baseUrl));
+  const html = await res.text();
+  const dom = new JSDOM(html);
+  const links = [...dom.window.document.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+  expect(
+    links.some((href) => href === "/" || href === "/index.html"),
+    `/readme/ has no link back to the app; links found: ${JSON.stringify(links)}`,
+  ).toBe(true);
+});

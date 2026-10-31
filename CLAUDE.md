@@ -306,6 +306,28 @@ work today.
   in `spec/persistence.test.ts` (`connect()` resolved on `"open"` separately
   from a later `nextMessage()`'s `ws.once("message", ...)`) — fixed the same
   way, proactively, before it also happened to fail in CI.
+- **2026-10-31: `/readme/` had no link back to the app.** Found testing the
+  live deployment the way a final marker actually would, starting at
+  `/readme/` (a plausible real entry point: a shared link, or a marker
+  reading the brief before the app itself) — the rendered page's only links
+  were the two essays README cites (Robin Sloan, Ink & Switch); nothing
+  pointed back to `/`, by mouse or by keyboard (Tab from `/readme/` reached
+  exactly those two external links, then left the document). A visitor
+  arriving there had no way back except manually editing the URL. Caught
+  before writing any fix by adding a failing test first:
+  `spec/invariants.test.ts`'s new "links back to the app from /readme/"
+  asserts an `<a href="/">` (or `/index.html`) is present in the served
+  `/readme/` HTML — added there rather than a new file, since it's the same
+  concern (`/readme/`'s own structure) as the file's two existing checks.
+  Fixed in `readmePage()`'s wrapper HTML in `src/server.ts` (a "&larr; Back
+  to Cairn" link above `<main class="readme">`), not in README.md's content
+  — README.md has no reason to link to the site it's hosted on, so this
+  belongs in the wrapper, not the rendered markdown. Re-verified on the live
+  deployment after redeploying. Rule: `/readme/` and `/` are two different
+  pages a visitor can land on directly, not just a page and a link-within-
+  the-other-page; each needs its own way back to the rest of the app, and
+  that has to be checked by actually starting from the page a marker or a
+  cold visitor would, not just from `/` outward.
 
 ## Forgotten web (/forgotten-web/)
 

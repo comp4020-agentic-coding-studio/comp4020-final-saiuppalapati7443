@@ -117,6 +117,10 @@ function toWireStone(stone: Stone, viewerVisitorId: string): WireStone {
 function readmePage(): string {
   const markdown = readFileSync(README_PATH, "utf8");
   const body = renderMarkdown(markdown);
+  // A newcomer plausibly lands here first (a shared link, a marker reading
+  // the brief before the app) — README.md's own content has no reason to
+  // link back to the site it's hosted on, so that link lives in this
+  // wrapper, not in the rendered markdown itself.
   return `<!doctype html>
 <html lang="en-AU">
   <head>
@@ -126,6 +130,7 @@ function readmePage(): string {
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
+    <p class="readme-back"><a href="/">&larr; Back to Cairn</a></p>
     <main class="readme">
 ${body}
     </main>
