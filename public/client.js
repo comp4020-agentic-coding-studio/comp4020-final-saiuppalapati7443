@@ -2,6 +2,7 @@
 // automatically with every request — the client never generates or reports
 // an id of its own.
 const cairn = document.getElementById("cairn");
+const pile = document.getElementById("pile");
 const countEl = document.getElementById("count");
 const carryStone = document.getElementById("carry-stone");
 const carryHint = document.getElementById("carry-hint");
@@ -11,6 +12,129 @@ const carryHint = document.getElementById("carry-hint");
 // can render exactly the server's current set without duplicating whatever
 // was already landed from before the drop.
 const landedStones = new Map();
+
+// --- Pile layout ------------------------------------------------------
+//
+// Every stone's position is first worked out in a fixed "world" coordinate
+// space (100 units wide, 60 tall — the same 5:3 ratio #cairn's CSS
+// aspect-ratio enforces) and only turned into pixels right before painting.
+// A phone and a laptop session therefore compute the exact same world
+// positions for the same set of stones — a pixel-space layout keyed off
+// cairn.clientWidth would instead give each viewport a differently shaped
+// pile. World units never change once a stone lands; only the pixel
+// conversion (pxPerUnit, and the zoom-to-fit scale below) depends on the
+// viewport, and gets recomputed on every resize.
+const WORLD_WIDTH = 100;
+const WORLD_HEIGHT = 60;
+const GROUND_FRACTION = 0.7; // matches the ground line in style.css's gradient
+const GROUND_Y = WORLD_HEIGHT * GROUND_FRACTION;
+
+// Below this, stones stop shrinking to fit a taller pile and #cairn scrolls
+// instead — chosen so even the smallest stone (sizeWorld ~4 units) stays a
+// visible, roughly thumb-sized mark rather than shrinking to a speck.
+const MIN_SCALE = 0.5;
+
+// Every known stone's x (0..1, as sent by the server) keyed by id — the raw
+// input recomputeStacking() needs to redo the full stack from scratch.
+const stoneX = new Map();
+
+// worldX/worldTop/sizeWorld per id, as of the last recomputeStacking() —
+// what relayout() reads to redraw pixel positions.
+const stoneWorld = new Map();
+
+function sizeWorldFor(id) {
+  return 4 + (id % 5) * 0.6;
+}
+
+// Rests one stone's bottom edge on the ground, or on the top of the highest
+// stone in `placed` it overlaps horizontally — whichever is higher.
+function stackWorldTop(worldX, sizeWorld, placed) {
+  let restingBottom = GROUND_Y;
+  const halfWidth = sizeWorld / 2;
+  for (const other of placed.values()) {
+    const overlaps = Math.abs(worldX - other.worldX) < halfWidth + other.sizeWorld / 2;
+    if (overlaps) restingBottom = Math.min(restingBottom, other.worldTop);
+  }
+  return restingBottom - sizeWorld;
+}
+
+// Recomputes every stone's world position from scratch, strictly in
+// ascending id order — not the order stones happened to arrive in this
+// session. A live "stone" broadcast can in principle reach a freshly
+// connecting client before its own "state" snapshot does (see the race noted
+// where landedStones is checked below), which would make *arrival* order
+// differ between two sessions watching the same pile; id order never does,
+// since every id is permanent and globally ordered. Re-deriving the whole
+// stack by id on every change — rather than only stacking each new stone
+// once, on top of whatever arrived earlier — is what actually guarantees two
+// sessions converge on the identical pile shape, not just a similar one.
+function recomputeStacking() {
+  const ids = [...stoneX.keys()].sort((a, b) => a - b);
+  stoneWorld.clear();
+  for (const id of ids) {
+    const worldX = stoneX.get(id) * WORLD_WIDTH;
+    const sizeWorld = sizeWorldFor(id);
+    const worldTop = stackWorldTop(worldX, sizeWorld, stoneWorld);
+    stoneWorld.set(id, { worldX, worldTop, sizeWorld });
+  }
+}
+
+// Recomputes every landed stone's pixel position from its stored world
+// coordinates — called after a new stone lands (the zoom-to-fit scale can
+// change as the pile grows) and on every #cairn resize (ResizeObserver
+// below). Never touches stoneWorld, only the DOM.
+function relayout() {
+  if (stoneWorld.size === 0) return;
+  const cairnWidthPx = cairn.clientWidth;
+  const cairnHeightPx = cairnWidthPx * (WORLD_HEIGHT / WORLD_WIDTH);
+  const pxPerUnit = cairnWidthPx / WORLD_WIDTH;
+
+  let minTop = GROUND_Y;
+  for (const placed of stoneWorld.values()) minTop = Math.min(minTop, placed.worldTop);
+  const pileWorldHeight = GROUND_Y - minTop;
+
+  const idealScale = pileWorldHeight > 0 ? Math.min(1, GROUND_Y / pileWorldHeight) : 1;
+  const scale = Math.max(idealScale, MIN_SCALE);
+
+  // Once scale has bottomed out at MIN_SCALE, a tall pile no longer fits in
+  // #cairn's own height — #pile grows taller than #cairn by that overflow,
+  // and #cairn's own `overflow-y: auto` (style.css) turns that into a
+  // scrollbar rather than clipping the top of the pile off.
+  const scaledPileHeight = pileWorldHeight * scale;
+  const overflowPx = Math.max(0, scaledPileHeight - GROUND_Y) * pxPerUnit;
+  const groundPxInPile = cairnHeightPx * GROUND_FRACTION + overflowPx;
+
+  pile.style.height = `${cairnHeightPx + overflowPx}px`;
+  pile.style.setProperty("--ground-top", `${groundPxInPile}px`);
+
+  for (const [id, placed] of stoneWorld) {
+    const el = landedStones.get(id);
+    if (!el) continue;
+    const worldCenterX = placed.worldX;
+    const worldCenterY = placed.worldTop + placed.sizeWorld / 2;
+    const pxSize = placed.sizeWorld * pxPerUnit * scale;
+    const pxCenterX = cairnWidthPx / 2 + (worldCenterX - WORLD_WIDTH / 2) * pxPerUnit * scale;
+    const pxCenterY = groundPxInPile - (GROUND_Y - worldCenterY) * pxPerUnit * scale;
+    el.style.width = `${pxSize}px`;
+    el.style.height = `${pxSize}px`;
+    el.style.left = `${pxCenterX - pxSize / 2}px`;
+    el.style.top = `${pxCenterY - pxSize / 2}px`;
+  }
+}
+
+// Scrolls #cairn so the most recently landed stone stays visible once the
+// pile has outgrown MIN_SCALE and started scrolling instead of shrinking
+// further — otherwise a visitor watching the pile grow would see it stop
+// changing the moment it starts scrolling, with new stones landing off the
+// top edge.
+function scrollNewestIntoView(id) {
+  const el = landedStones.get(id);
+  if (!el || cairn.scrollHeight <= cairn.clientHeight) return;
+  const target = el.offsetTop + el.offsetHeight / 2 - cairn.clientHeight / 2;
+  cairn.scrollTop = Math.max(0, Math.min(target, cairn.scrollHeight - cairn.clientHeight));
+}
+
+new ResizeObserver(relayout).observe(cairn);
 
 function updateCount() {
   const stoneCount = landedStones.size;
@@ -45,30 +169,26 @@ function onConnected() {
   carryHint.textContent = "Drag onto the pile above, or press Enter / Space";
 }
 
-// The ground line in style.css sits at 70% of the container's height; stones
-// pile up from there, nudged higher as more land near the same spot.
-function restingTop(stone, size) {
-  const groundY = cairn.clientHeight * 0.7;
-  const pileRise = (stone.id % 18) * 3;
-  return groundY - pileRise - size;
-}
-
 function landStone(stone) {
   const el = document.createElement("div");
   el.className = "stone";
   el.dataset.stoneId = String(stone.id);
-  const size = 22 + (stone.id % 5) * 3;
-  const restTransform = `translateY(0) scale(1) rotate(${stone.rotation}deg)`;
-
-  el.style.width = `${size}px`;
-  el.style.height = `${size}px`;
-  el.style.left = `calc(${stone.x * 100}% - ${size / 2}px)`;
-  el.style.top = `${restingTop(stone, size)}px`;
   el.style.background = stone.color;
   if (stone.mine) el.classList.add("mine");
   el.style.opacity = "0.5";
+  pile.appendChild(el);
+  landedStones.set(stone.id, el);
+
+  // World-space stacking (see the block above), always recomputed in id
+  // order from every known stone — not just this one stacked on top of
+  // whatever happened to already be in the DOM — so the result never
+  // depends on the order stones arrived in this particular session.
+  stoneX.set(stone.id, stone.x);
+  recomputeStacking();
+  relayout();
+
+  const restTransform = `translateY(0) scale(1) rotate(${stone.rotation}deg)`;
   el.style.transform = `translateY(-60px) scale(0.6) rotate(${stone.rotation}deg)`;
-  cairn.appendChild(el);
 
   // Two frames so the browser paints the "carried" state before the
   // transition to "landed" starts, instead of collapsing both into one.
@@ -79,17 +199,23 @@ function landStone(stone) {
     });
   });
 
-  landedStones.set(stone.id, el);
   updateCount();
 }
 
 // A reconnect's "state" push repeats every stone already landed before the
 // gap, plus any dropped during it — landing only the ones not already in
 // landedStones renders exactly that set instead of duplicating the overlap.
+// Scrolling once at the end (rather than per stone) avoids visible jitter
+// when a snapshot lands a whole pile at once.
 function renderState(stones) {
+  let lastNewId;
   for (const stone of stones) {
-    if (!landedStones.has(stone.id)) landStone(stone);
+    if (!landedStones.has(stone.id)) {
+      landStone(stone);
+      lastNewId = stone.id;
+    }
   }
+  if (lastNewId !== undefined) scrollNewestIntoView(lastNewId);
 }
 
 function connect() {
@@ -117,7 +243,10 @@ function connect() {
       // A reconnect can race the server's own broadcast arriving just before
       // the fresh connection's "state" snapshot (or vice versa) — whichever
       // arrives second must not re-land a stone the first already drew.
-      if (!landedStones.has(message.stone.id)) landStone(message.stone);
+      if (!landedStones.has(message.stone.id)) {
+        landStone(message.stone);
+        scrollNewestIntoView(message.stone.id);
+      }
       if (message.stone.mine) markPlacedToday();
     } else if (message.type === "refused") {
       // The server enforces the one-stone-a-day limit; this is purely so a

@@ -203,6 +203,46 @@ work today.
   README or an ADR with no corresponding `spec/*.test.ts` is unverified, not
   working — passing `pnpm check` only means what's actually under test holds,
   not that every promise does.
+- **2026-10-31: stones never actually stacked — `restingTop()` picked each
+  stone's height from `stone.id % 18`, independent of every other stone's
+  position, so stones at the same `x` just overlapped at arbitrary heights
+  instead of resting on each other.** README calls Cairn "a cairn"; what
+  rendered was scattered circles hugging the ground line (see
+  `docs/screenshots/before-stacking-390.png` and `-1280.png`). Fixed by
+  giving `public/client.js` a real stacking pass: `recomputeStacking()`
+  derives every stone's position in a fixed 100×60 "world" coordinate space
+  (not pixels) by walking all known stones in ascending id order and resting
+  each one's bottom on the highest already-placed stone it overlaps
+  horizontally, or the ground if nothing does; `relayout()` then projects
+  those world coordinates into the current `#cairn` box's actual pixels.
+  Keying the stacking math on id order rather than pixel/arrival order was
+  deliberate: ids are permanent and globally ordered (see the `"stone"`
+  broadcast/`"state"` race already noted above), so two sessions that have
+  seen the same set of stones always compute the identical pile, and a 390px
+  phone and a 1280px laptop show the same pile shape at the same *fractional*
+  position (`#cairn`'s CSS `aspect-ratio: 5 / 3` keeps the box's own ratio
+  matched to the world box's, so the world→pixel conversion is a uniform
+  scale with no distortion). A `ResizeObserver` reruns `relayout()` (never
+  `recomputeStacking()` — world positions don't change, only their pixel
+  projection) on every `#cairn` size change. A tall pile first shrinks via a
+  zoom-to-fit scale down to `MIN_SCALE = 0.5` (chosen so even the smallest
+  stone, ~4 world units, stays a visible, roughly thumb-sized target on a
+  phone rather than a speck); past that floor `#pile` grows taller than
+  `#cairn` and `#cairn`'s own `overflow-y: auto` turns it into a scrollbar,
+  with `scrollNewestIntoView()` keeping the latest stone on screen as it
+  lands. Verified with `spec/pile-layout.browser.test.ts`: two sessions at
+  390×844 and 1280×800 against the same isolated server must report every
+  stone's position, as a fraction of `#cairn`'s own box, within 2 decimal
+  places of each other — both for a seeded pile and for a stone dropped live
+  from one session and watched land on the other. Confirmed red first by
+  making stone size depend on `window.innerWidth` (a plausible real mistake —
+  "slightly bigger stones on a wide screen" — not a contrived one), which
+  immediately desynced the two viewports' piles. Rule: any layout value
+  derived from one client's own viewport (`cairn.clientWidth`,
+  `window.innerWidth`, anything pixel-based) that two different sessions need
+  to agree on has to be converted to a shared, resolution-independent unit
+  before being used for anything but final painting — pixels are a rendering
+  detail, not where shared layout math should live.
 
 ## Forgotten web (/forgotten-web/)
 

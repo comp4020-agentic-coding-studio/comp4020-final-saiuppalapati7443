@@ -40,11 +40,46 @@ main {
 #cairn {
   position: relative;
   width: min(90vw, 36rem);
-  height: 20rem;
+  /* Fixed, not a px height: client.js's stacking math is done in "world"
+     units (a fixed 100x60 box) and only lands at the same *fractional*
+     position on every viewport if #cairn's own box always has that same
+     5:3 ratio — see client.js's WORLD_WIDTH/WORLD_HEIGHT. */
+  aspect-ratio: 5 / 3;
   border-radius: 0.75rem;
-  background: linear-gradient(var(--sky-top), var(--sky-bottom) 70%, var(--ground) 70%);
   border: 1px solid #c3cdd1;
-  overflow: hidden;
+  overflow-x: hidden;
+  /* auto, not hidden: a pile compressed all the way to client.js's
+     MIN_SCALE floor still grows taller than the box, and a visitor needs to
+     be able to scroll up through it, not have the top silently clipped off. */
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+/* The stone-positioning layer inside #cairn: a normal-flow block (never
+   absolutely positioned itself, so #cairn's native overflow/scroll handles a
+   pile taller than the box with no extra work), sized by client.js's
+   relayout() to exactly fit the current pile, tallest stone first. Every
+   .stone inside is positioned absolutely relative to #pile's own top-left.
+   The sky/ground gradient lives here, not on #cairn: #cairn's own background
+   would stay fixed to its scrollport as #pile scrolls past it, visually
+   drifting away from the stones' actual ground line — painting it on #pile
+   instead means it scrolls with the stones it's the ground for. --ground-top
+   defaults to 70% of #pile's own (usually unscrolled) height; client.js's
+   relayout() overrides it with a px value once the pile has outgrown
+   #cairn's box and #pile has grown taller to match. */
+#pile {
+  position: relative;
+  width: 100%;
+  /* The default before client.js's relayout() ever runs (no stones yet) or
+     while it's still loading — fills #cairn exactly, same as the old
+     single-element #cairn background did. relayout() overrides this with an
+     explicit taller px value only once a pile has actually outgrown it. */
+  height: 100%;
+  background: linear-gradient(
+    var(--sky-top),
+    var(--sky-bottom) calc(var(--ground-top, 70%) - 1px),
+    var(--ground) var(--ground-top, 70%)
+  );
 }
 
 .stone {
@@ -52,6 +87,16 @@ main {
   border-radius: 45% 55% 50% 50% / 55% 45% 55% 45%;
   box-shadow: inset -3px -3px 6px rgba(0, 0, 0, 0.25), 0 2px 3px rgba(0, 0, 0, 0.2);
   transition: transform 0.4s ease, opacity 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #cairn {
+    scroll-behavior: auto;
+  }
+
+  .stone {
+    transition: none;
+  }
 }
 
 /* "This is yours" (docs/adr/0004) is purely a client-side visual cue, driven
