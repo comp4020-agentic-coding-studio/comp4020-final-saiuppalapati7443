@@ -23,7 +23,11 @@ interface StoneMessage {
   type: "stone";
   stone: StoneWire;
 }
-type ServerMessage = StateMessage | StoneMessage;
+interface RefusedMessage {
+  type: "refused";
+  reason: string;
+}
+type ServerMessage = StateMessage | StoneMessage | RefusedMessage;
 
 // A message can arrive the instant the connection opens (the initial
 // "state" push), before test code gets a chance to attach a listener for
@@ -453,4 +457,38 @@ it("never includes a cookie id anywhere in a response", async () => {
   }
 
   a.ws.close();
+});
+
+// ADR 0004: one stone per visitor per Canberra day, enforced against the
+// cookie-resolved identity. A reconnect with the same cookie is the same
+// visitor (same as "gives the same visitor the same color across a
+// reconnect" above); a fresh connection with no cookie is a different one.
+it("refuses a second drop from the same cookie on the same day, but allows a different cookie", async () => {
+  const a = await connect();
+  await nextMessage(a);
+
+  const firstDrop = nextMessage(a);
+  a.ws.send(JSON.stringify({ type: "drop", x: 0.2 }));
+  const firstStone = await firstDrop;
+  if (firstStone.type !== "stone") throw new Error("expected a stone broadcast");
+  a.ws.close();
+
+  const again = await connect(a.setCookie);
+  await nextMessage(again); // initial state
+
+  const refusal = nextMessage(again);
+  again.ws.send(JSON.stringify({ type: "drop", x: 0.3 }));
+  const refusedMessage = await refusal;
+  expect(refusedMessage.type).toBe("refused");
+  again.ws.close();
+
+  const b = await connect();
+  await nextMessage(b);
+
+  const secondDrop = nextMessage(b);
+  b.ws.send(JSON.stringify({ type: "drop", x: 0.4 }));
+  const secondStone = await secondDrop;
+  expect(secondStone.type, "a different cookie must still be allowed to drop today").toBe("stone");
+
+  b.ws.close();
 });

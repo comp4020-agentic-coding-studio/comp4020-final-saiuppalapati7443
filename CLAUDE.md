@@ -182,6 +182,27 @@ work today.
   client-side guard that silently no-ops on bad state (socket not open, a
   request about to be refused) needs a visible signal on the page, not just
   code that correctly declines to do the wrong thing.
+- **2026-10-31: three README-checkable claims had no spec coverage at all.**
+  README promises "what gets dropped survives a restart or redeploy" and "one
+  stone per Canberra day," and `docs/adr/0004` fixes the day boundary to
+  `Australia/Canberra`, but nothing in `spec/` had ever actually restarted a
+  server against its own data, asserted a second same-day drop gets refused,
+  or checked `canberraDate()` at a Canberra/UTC day boundary — `hasDroppedToday`
+  and the restart path could have silently broken and every existing check
+  would still have gone green. Added `spec/persistence.test.ts` (spawns an
+  isolated server on a temp `DATA_DIR`, same pattern as `spec/logging.test.ts`,
+  drops a stone, kills the process, starts a fresh one on the same
+  `DATA_DIR`, and confirms the stone is still there and still `mine` for that
+  cookie), `spec/canberra-date.test.ts` (a pure unit test importing
+  `canberraDate()` directly, asserting `2026-10-31T14:30:00Z` — still Oct 31
+  in UTC — comes back as `2026-11-01`, the Canberra calendar day), and a
+  same-cookie-refused/different-cookie-allowed test in `spec/cairn.test.ts`.
+  Each was deliberately broken once (an `:memory:` database, `canberraDate`
+  swapped for a plain UTC slice, the `hasDroppedToday` check short-circuited)
+  to confirm it actually goes red before trusting it green. Rule: a claim in
+  README or an ADR with no corresponding `spec/*.test.ts` is unverified, not
+  working — passing `pnpm check` only means what's actually under test holds,
+  not that every promise does.
 
 ## Forgotten web (/forgotten-web/)
 
