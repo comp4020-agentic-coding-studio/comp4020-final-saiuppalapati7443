@@ -9,16 +9,21 @@ work today.
 - `/` answers 200 and `/readme/` publishes README.md's actual content, rendered
   at request time — not a cached or stale copy. `spec/invariants.test.ts` is
   the floor this guarantees, not the whole claim.
-- Anything arriving over `/ws` is untrusted input: validate it (visitorId must
-  parse as a UUID, `x` must be a finite number in `[0, 1]`) before it reaches
-  `node:sqlite` or gets broadcast to anyone else. A value failing validation is
-  dropped silently — it never crashes the connection and never gets a second
-  chance at being "mostly valid."
+- Anything arriving over `/ws` is untrusted input: validate it (`x` must be a
+  finite number in `[0, 1]`) before it reaches `node:sqlite` or gets broadcast
+  to anyone else. A value failing validation is dropped silently — it never
+  crashes the connection and never gets a second chance at being "mostly
+  valid." A `visitorId` field in a message body is not validated at all —
+  it's simply never read (`docs/adr/0004-who-may-see-and-change-what.md`):
+  identity resolves only from the server-set cookie on the HTTP/upgrade
+  request (`src/identity.ts`), so there's nothing to check a client-claimed
+  id against.
 - No accounts, logins, names, or anything else that identifies a person beyond
-  the hue derived from a client-generated id (`docs/adr/0002-visitor-identity.md`).
-  Don't add a field that makes that untrue without updating that ADR and
-  README.md together — it's a claim visitors are relying on, not an
-  implementation detail.
+  the hue derived from a server-set cookie id
+  (`docs/adr/0002-visitor-identity.md`, transport amended by
+  `docs/adr/0004-who-may-see-and-change-what.md`). Don't add a field that
+  makes that untrue without updating those ADRs and README.md together — it's
+  a claim visitors are relying on, not an implementation detail.
 - The sqlite file at `${DATA_DIR}/cairn.db` is the single source of truth.
   Nothing a client depends on across a reconnect may live only in server
   memory.
