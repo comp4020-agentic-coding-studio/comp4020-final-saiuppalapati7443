@@ -249,42 +249,54 @@ work today.
   before being used for anything but final painting — pixels are a rendering
   detail, not where shared layout math should live.
 - **2026-10-31: `spec/logging.test.ts` failed once when the full suite ran
-  together, then passed every time run alone — and the first fix wasn't
-  enough, caught by a real CI failure after pushing it.** Both its tests sent
-  a WS message that causes a log line, then used a fixed `setTimeout` (200ms,
-  300ms) as a guess for "the server's had enough time to flush that line to
-  stdout" before asserting against `stdout`. That guess holds when this
-  test's own spawned server has a core mostly to itself, but the full suite
-  runs several other spawned servers and a handful of real Chromium instances
-  concurrently — CPU contention can push the actual flush well past a fixed
-  300ms. First fix: replaced both fixed sleeps with `waitForLogLine()`,
-  polling `stdout` for the specific line each test needs, with its own
-  explicit timeout. Verified locally with three full-suite runs, pushed — and
+  together, then passed every time run alone — and it took three attempts,
+  across two real CI failures, to find the actual bug instead of guessing
+  at timing.** Both tests sent a WS message that causes a log line, then
+  checked `stdout` for it. **Attempt 1:** a fixed `setTimeout` (200ms, 300ms)
+  guessed "the server's had long enough to flush the line." Replaced with
+  `waitForLogLine()`, polling `stdout` for the specific line instead of
+  guessing a duration. Verified locally with three full-suite runs, pushed —
   CI still failed, with vitest's own generic "Test timed out in 15000ms" at
-  `spec/logging.test.ts:106`, not `waitForLogLine()`'s own message. The first
-  fix only guarded the *last* wait in each test; every earlier step (the raw
-  WebSocket `"open"` event, draining the initial `"state"` push, the owner's
-  own drop broadcast) was still a bare `await new Promise(...)` with no
-  timeout and no diagnostic at all — under CI's real contention (heavier than
-  what three local runs happened to hit), one of those easily ate enough of
-  the 15000ms budget that vitest's own wrapper fired first, before
-  `waitForLogLine()` ever got a turn to report what it was polling for.
-  Second fix: every wait in the file now goes through one of two helpers
-  (`waitForEvent()` for a single WS event, `waitForLogLine()` for polling
-  `stdout`), each with its own named, generous timeout (15000ms /
-  25000ms) and a message identifying exactly what was being waited for — no
-  bare `await new Promise(...)` left anywhere in the file. Reproduced the
-  original CI failure locally by running the suite under six CPU-pinned
-  busy-loops (`while true; do :; done`, one per spare core) — the first fix
-  failed exactly as CI had, with a bare "message" event wait timing out, not
-  `waitForLogLine()`. The second fix passed three consecutive full-suite runs
-  under that same artificial load. Rule: when a fix removes one guess (a
-  fixed sleep) but a test still has *other* unguarded waits sitting right
-  next to it, verifying the fix by running the suite a few times on a quiet
-  machine isn't enough — reproduce the actual contention the real failure
-  happened under (busy-loop the spare cores, or just run the full suite
-  concurrently with itself) before trusting a timing fix is complete, and
-  audit every wait in the file, not just the one the stack trace pointed at.
+  `spec/logging.test.ts:106`, not `waitForLogLine()`'s own message. **Attempt
+  2:** reasoned that must mean an *earlier*, still-unguarded wait (the raw
+  WebSocket `"open"` event, draining the initial `"state"` push) was eating
+  the budget under CI's heavier contention — gave every wait its own
+  `waitForEvent()`/`waitForLogLine()` timeout and diagnostic, verified by
+  reproducing contention locally with CPU-pinned busy-loops (which *did*
+  reproduce attempt 1's exact failure), three clean full-suite runs under
+  that load, pushed — and CI failed again, now with
+  `waitForEvent()`'s own message: "timed out after 15000ms waiting for a
+  WebSocket 'message' event." That specific message, read carefully instead
+  of reached past, was the actual clue: a *fixed* 15000ms timeout on a
+  single awaited event isn't what "slow under contention" looks like
+  (contention makes things slower, not infinitely stuck) — it's what a
+  **lost event** looks like. **The real bug, found by reading that message
+  properly:** `await waitForEvent(ws, "open")` then, as a separate
+  subsequent `await`, `waitForEvent(ws, "message")` — attaching the
+  `"message"` listener only *after* `"open"` had already resolved, the exact
+  race `spec/cairn.test.ts`'s own header comment already names: the
+  server's initial `"state"` push can arrive the instant the connection
+  opens, and Node's `EventEmitter` never queues an event for a listener
+  that isn't attached yet. Both earlier "fixes" added timeouts *around* that
+  gap without ever closing it, so they could only ever turn a hang into a
+  slow, eventual failure — never into a pass. **Attempt 3 (the actual
+  fix):** rewrote the file to use `spec/cairn.test.ts`'s own proven
+  pattern — a message queue (`conn.queue`/`conn.waiters`) attached the
+  moment the `WebSocket` is constructed, before anything can `await`, so no
+  message arriving before a caller asks for it is ever lost. Verified with
+  15 local runs (10 uncontended, 5 under CPU-pinned contention) and three
+  full-suite runs, all green. Rule: a timeout that fires at exactly its
+  fixed duration, not sooner and not with partial progress, is evidence of
+  a **lost event**, not evidence something was merely slow — read the
+  specific error message a fix's own diagnostics produce before reaching
+  for a bigger number or a broader guard; and a new spawn-your-own-server
+  spec file that talks to a raw `WebSocket` needs the same message-queue
+  pattern `spec/cairn.test.ts` already uses, not a fresh `ws.once("message",
+  ...)` per wait, which is exactly this race waiting to happen again.
+  Checking the rest of `spec/` for the same pattern found it already present
+  in `spec/persistence.test.ts` (`connect()` resolved on `"open"` separately
+  from a later `nextMessage()`'s `ws.once("message", ...)`) — fixed the same
+  way, proactively, before it also happened to fail in CI.
 
 ## Forgotten web (/forgotten-web/)
 

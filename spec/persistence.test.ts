@@ -51,21 +51,47 @@ interface StoneWire {
   mine: boolean;
 }
 
-function connect(port: number, cookie?: string): Promise<{ ws: WebSocket; setCookie: string | undefined }> {
+type Message = { type: string; stones?: StoneWire[]; stone?: StoneWire };
+
+interface Conn {
+  ws: WebSocket;
+  setCookie: string | undefined;
+  queue: Message[];
+  waiters: Array<(message: Message) => void>;
+}
+
+// A message can arrive the instant the connection opens (the server's
+// initial "state" push, sent the moment it accepts the connection) — before
+// a caller that `await`s connect() and only then attaches a `"message"`
+// listener gets a chance to. Node's EventEmitter never queues an event for a
+// listener that isn't registered yet, so that gap can silently lose the
+// "state" push. Queuing every message from the moment the WebSocket is
+// constructed — same pattern as spec/cairn.test.ts and spec/logging.test.ts
+// (see its dated CLAUDE.md correction) — closes that gap instead of hoping
+// the race never loses.
+function connect(port: number, cookie?: string): Promise<Conn> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://localhost:${port}/ws`, cookie ? { headers: { cookie } } : undefined);
-    let setCookie: string | undefined;
+    const conn: Conn = { ws, setCookie: undefined, queue: [], waiters: [] };
     ws.once("upgrade", (res) => {
       const raw = res.headers["set-cookie"];
-      setCookie = Array.isArray(raw) ? raw[0] : raw;
+      conn.setCookie = Array.isArray(raw) ? raw[0] : raw;
     });
-    ws.once("open", () => resolve({ ws, setCookie }));
+    ws.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as Message;
+      const waiter = conn.waiters.shift();
+      if (waiter) waiter(message);
+      else conn.queue.push(message);
+    });
+    ws.once("open", () => resolve(conn));
     ws.once("error", reject);
   });
 }
 
-function nextMessage(ws: WebSocket): Promise<{ type: string; stones?: StoneWire[]; stone?: StoneWire }> {
-  return new Promise((resolve) => ws.once("message", (data) => resolve(JSON.parse(data.toString()))));
+function nextMessage(conn: Conn): Promise<Message> {
+  const queued = conn.queue.shift();
+  if (queued) return Promise.resolve(queued);
+  return new Promise((resolve) => conn.waiters.push(resolve));
 }
 
 afterAll(async () => {
@@ -78,21 +104,21 @@ it("keeps a dropped stone, still attributed to its owner, after the server resta
   const port = 20000 + Math.floor(Math.random() * 10000);
 
   server = await startServer(port);
-  const { ws, setCookie } = await connect(port);
-  await nextMessage(ws); // initial state
+  const conn = await connect(port);
+  await nextMessage(conn); // initial state
 
-  const dropped = nextMessage(ws);
-  ws.send(JSON.stringify({ type: "drop", x: 0.44 }));
+  const dropped = nextMessage(conn);
+  conn.ws.send(JSON.stringify({ type: "drop", x: 0.44 }));
   const droppedMessage = await dropped;
   if (droppedMessage.type !== "stone" || !droppedMessage.stone) throw new Error("expected a stone broadcast");
   const stoneId = droppedMessage.stone.id;
-  ws.close();
+  conn.ws.close();
 
   await stopServer(server);
   server = await startServer(port);
 
-  const again = await connect(port, setCookie);
-  const state = await nextMessage(again.ws);
+  const again = await connect(port, conn.setCookie);
+  const state = await nextMessage(again);
   if (state.type !== "state" || !state.stones) throw new Error("expected initial state");
 
   const survived = state.stones.find((stone) => stone.id === stoneId);
