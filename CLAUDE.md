@@ -389,6 +389,68 @@ work today.
   background noise. Before writing an isolated-server test from scratch,
   also check whether an *existing* test already has this exposure and
   should move instead of a new one being added next to it.
+- **2026-11-02: the earlier "browser test timed out against 180+ local
+  stones" wasn't just a test-environment artifact — a real O(stones³) page
+  load and O(stones²) live drop were hiding behind it.** `landStone()` in
+  `public/client.js` called a full `recomputeStacking()` (itself
+  O(current pile size)²: it restacks every known stone from an empty pile,
+  in id order) on *every single stone landed* — including once per stone
+  inside `renderState()`'s per-stone loop on initial page load. Measured on
+  an isolated local server (seeded to 200, ~500, and ~1000 stones; never the
+  live site) at both marking viewports before any fix: page load went
+  243ms → 1.8s → 5.3s as the pile grew, and a live drop's wall-clock time to
+  reach another session's DOM went from ~130ms to ~320ms at 500 stones —
+  already past the ~200ms budget — confirming this was a real, user-facing
+  problem the pile will actually hit (the live site already carries ~160
+  stones and only grows). Isolated the stacking cost itself with an
+  in-page profiling script (copying the exact algorithm, timed with
+  `performance.now()`): a single `recomputeStacking()` call cost ~3.8ms at
+  1000 stones, but `renderState()`'s loop calls it once per *already-landed*
+  stone as the pile builds up to N, making a page load's total stacking
+  cost O(1²+2²+...+N²) ≈ O(N³) — confirmed directly by replaying that exact
+  loop shape in-page: 155ms of stacking work alone at 500 stones, 1148ms at
+  1000, an ~7.4× cost for a 2× stone increase, consistent with cubic growth
+  (2³ = 8). Fixed with `stackStone()`: an O(already-stacked stones) append
+  that's provably equivalent to a full id-ordered rebuild whenever the new
+  id is larger than every id already stacked — true for every page load
+  (the server's own `"state"` snapshot is already `ORDER BY id ASC`,
+  `db.ts`) and every live drop (ids are globally increasing) — falling back
+  to the original full `recomputeStacking()` only for the rare race already
+  named in that function's comment (a live broadcast beating its own
+  `"state"` catch-up to a freshly connecting client). Also split
+  `landStone()`'s single-stone path from `renderState()`'s bulk path so a
+  page load calls the O(stones) `relayout()` once at the end, not once per
+  landed stone, instead of leaving the pixel-layout cost quadratic even
+  after the stacking cost dropped to linear. Re-measured after the fix,
+  same isolated server, same three sizes: page load 204–526ms at every
+  size up to ~1000 stones (down from up to 5.3s); a live drop's true
+  broadcast-to-DOM latency, measured with a raw WebSocket drop rather than
+  a simulated Playwright drag (the drag gesture's own mouse-movement time
+  was most of what the first end-to-end measurement showed, not real
+  client or server cost), came to 12–58ms at every size — comfortably under
+  the ~200ms budget even at 1000 stones, not just at 500. Confirmed the
+  pile's shape is unchanged by diffing every stone's fractional position
+  between the two marking viewports before and after the fix, at 1000
+  stones: max deviation ~0.011 either way — a pre-existing sub-pixel
+  rounding floor present on the *original* unmodified code too (confirmed
+  by measuring it separately, before the fix, at the same pile size), not
+  something this change introduced. Locked in with
+  `spec/pile-performance.browser.test.ts`: seeds 1000 stones once on its
+  own isolated server, then asserts page load and one live drop both beat
+  generous budgets (3000ms, 500ms — multiples of the measured numbers
+  above, not the numbers themselves, so ordinary machine-to-machine
+  variance doesn't make the test flaky over something that was never the
+  regression) at both marking viewports, plus a pile-shape-match check at
+  the same 1000-stone scale with a widened tolerance to account for the
+  pre-existing rounding floor. Rule: a function that's individually fast
+  can still make a loop that calls it once per item cubic, not quadratic —
+  profile the *loop*, not just the function it calls, and when a stacking
+  or layout algorithm is restated as "recompute everything from the
+  current state," check whether the new input is always a strict
+  append (a global, monotonic order like an id) before accepting O(n²)
+  per call as the cost of correctness; an append-only input usually lets
+  the common case amortise down to linear, with the full recompute kept
+  only as a fallback for whatever case breaks the append assumption.
 
 ## Forgotten web (/forgotten-web/)
 

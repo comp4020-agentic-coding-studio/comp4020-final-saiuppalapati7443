@@ -35,12 +35,19 @@ const GROUND_Y = WORLD_HEIGHT * GROUND_FRACTION;
 const MIN_SCALE = 0.5;
 
 // Every known stone's x (0..1, as sent by the server) keyed by id — the raw
-// input recomputeStacking() needs to redo the full stack from scratch.
+// input recomputeStacking() needs to redo the full stack from scratch (the
+// rare fallback path below; the common path never reads this map at all).
 const stoneX = new Map();
 
-// worldX/worldTop/sizeWorld per id, as of the last recomputeStacking() —
-// what relayout() reads to redraw pixel positions.
+// worldX/worldTop/sizeWorld per id, in ascending id order — what relayout()
+// reads to redraw pixel positions. stackStone() below relies on this Map's
+// own iteration order always being ascending id order (every insertion,
+// fast-path or fallback, only ever appends in that order), so the highest
+// id currently stacked is always its own last key — tracked in
+// `maxStackedId` instead of re-reading the Map, which is why the fast path
+// is O(1) to check, not O(stones).
 const stoneWorld = new Map();
+let maxStackedId = -Infinity;
 
 function sizeWorldFor(id) {
   return 4 + (id % 5) * 0.6;
@@ -58,16 +65,13 @@ function stackWorldTop(worldX, sizeWorld, placed) {
   return restingBottom - sizeWorld;
 }
 
-// Recomputes every stone's world position from scratch, strictly in
-// ascending id order — not the order stones happened to arrive in this
-// session. A live "stone" broadcast can in principle reach a freshly
-// connecting client before its own "state" snapshot does (see the race noted
-// where landedStones is checked below), which would make *arrival* order
-// differ between two sessions watching the same pile; id order never does,
-// since every id is permanent and globally ordered. Re-deriving the whole
-// stack by id on every change — rather than only stacking each new stone
-// once, on top of whatever arrived earlier — is what actually guarantees two
-// sessions converge on the identical pile shape, not just a similar one.
+// Full rebuild, O(stones²): walks every known id in ascending order,
+// restacking everything from an empty pile. Only stackStone()'s rare
+// out-of-order fallback below still calls this — the common path (every
+// page load, every live drop) never does, see that function's comment for
+// why. Kept as its own function because it's still the thing that defines
+// "correct": stackStone()'s fast path is only valid because its result is
+// provably identical to what a full id-ordered rebuild would produce.
 function recomputeStacking() {
   const ids = [...stoneX.keys()].sort((a, b) => a - b);
   stoneWorld.clear();
@@ -76,6 +80,41 @@ function recomputeStacking() {
     const sizeWorld = sizeWorldFor(id);
     const worldTop = stackWorldTop(worldX, sizeWorld, stoneWorld);
     stoneWorld.set(id, { worldX, worldTop, sizeWorld });
+  }
+  maxStackedId = ids.length > 0 ? ids[ids.length - 1] : -Infinity;
+}
+
+// Adds one stone's world position to stoneWorld in O(already-stacked
+// stones), not the O(stones²) a full recomputeStacking() costs — the
+// difference that keeps a page load of N stones at O(N²) total instead of
+// O(N³), and a single live drop at O(current pile size) instead of O(size²).
+//
+// Safe whenever `id` is larger than every id already stacked: stackWorldTop()
+// only ever looks at *already-placed* stones, so an earlier stone's own
+// worldTop never depends on anything landing after it — appending id on top
+// of the existing stoneWorld, in the existing order, produces exactly the
+// worldTop a full id-ordered rebuild would. That's true for every page load
+// (the server's own "state" snapshot is already sorted `ORDER BY id ASC`,
+// db.ts) and every live drop (ids are globally increasing, so a session's
+// own next drop is always the biggest id it's seen). The one case it can't
+// be trusted is the race already named where a live "stone" broadcast
+// reaches a freshly connecting client before its own "state" catch-up does
+// — that can hand this function an id smaller than one already stacked,
+// which the fast path can't correct for (inserting a smaller id underneath
+// a stone that already rests on top of it would change which one is "on
+// top", not just extend the stack), so that case alone falls back to the
+// full O(stones²) rebuild. It's rare enough that the fallback's cost never
+// shows up in practice.
+function stackStone(id, x) {
+  stoneX.set(id, x);
+  if (id > maxStackedId) {
+    const worldX = x * WORLD_WIDTH;
+    const sizeWorld = sizeWorldFor(id);
+    const worldTop = stackWorldTop(worldX, sizeWorld, stoneWorld);
+    stoneWorld.set(id, { worldX, worldTop, sizeWorld });
+    maxStackedId = id;
+  } else {
+    recomputeStacking();
   }
 }
 
@@ -169,7 +208,13 @@ function onConnected() {
   carryHint.textContent = "Drag onto the pile above, or press Enter / Space";
 }
 
-function landStone(stone) {
+// Creates and stacks one stone (DOM element + world position), but doesn't
+// position it on screen or animate it in — relayout() (the O(stones) part
+// that has to run after every stone, including a whole batch of them) and
+// the landing animation are split out so a bulk load can do the expensive
+// per-stone work (DOM creation, stacking) N times but the O(stones) layout
+// pass and the animation kickoff only once each, not N times.
+function createStoneElement(stone) {
   const el = document.createElement("div");
   el.className = "stone";
   el.dataset.stoneId = String(stone.id);
@@ -178,15 +223,11 @@ function landStone(stone) {
   el.style.opacity = "0.5";
   pile.appendChild(el);
   landedStones.set(stone.id, el);
+  stackStone(stone.id, stone.x);
+  return el;
+}
 
-  // World-space stacking (see the block above), always recomputed in id
-  // order from every known stone — not just this one stacked on top of
-  // whatever happened to already be in the DOM — so the result never
-  // depends on the order stones arrived in this particular session.
-  stoneX.set(stone.id, stone.x);
-  recomputeStacking();
-  relayout();
-
+function animateLanding(el, stone) {
   const restTransform = `translateY(0) scale(1) rotate(${stone.rotation}deg)`;
   el.style.transform = `translateY(-60px) scale(0.6) rotate(${stone.rotation}deg)`;
 
@@ -198,24 +239,44 @@ function landStone(stone) {
       el.style.opacity = "1";
     });
   });
+}
 
+// The single live-drop path: one new stone, so the O(stones) relayout() and
+// the animation both happen immediately — there's nothing to batch.
+function landStone(stone) {
+  const el = createStoneElement(stone);
+  relayout();
+  animateLanding(el, stone);
   updateCount();
 }
 
 // A reconnect's "state" push repeats every stone already landed before the
 // gap, plus any dropped during it — landing only the ones not already in
 // landedStones renders exactly that set instead of duplicating the overlap.
-// Scrolling once at the end (rather than per stone) avoids visible jitter
-// when a snapshot lands a whole pile at once.
+// Unlike landStone(), this stacks and creates every new stone first and
+// calls relayout() only once at the end (not once per stone): stacking is
+// already O(1) amortised per stone via stackStone()'s fast path, but
+// relayout() is O(stones) every time it runs, so calling it once per
+// landed stone during a bulk load — rather than once after all of
+// them — is what used to make a page load cost O(stones²) above and
+// beyond the stacking cost alone. Scrolling once at the end (same
+// reasoning) avoids visible jitter when a snapshot lands a whole pile at
+// once.
 function renderState(stones) {
-  let lastNewId;
+  const newlyLanded = [];
   for (const stone of stones) {
     if (!landedStones.has(stone.id)) {
-      landStone(stone);
-      lastNewId = stone.id;
+      newlyLanded.push({ stone, el: createStoneElement(stone) });
     }
   }
-  if (lastNewId !== undefined) scrollNewestIntoView(lastNewId);
+  if (newlyLanded.length === 0) return;
+
+  relayout();
+  for (const { stone, el } of newlyLanded) animateLanding(el, stone);
+  updateCount();
+
+  const lastNewId = newlyLanded[newlyLanded.length - 1].stone.id;
+  scrollNewestIntoView(lastNewId);
 }
 
 function connect() {
