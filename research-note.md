@@ -1,0 +1,25 @@
+#  Watching it fail: keeping a program's theory when an agent writes the code
+
+Many projects today use agents to write most of their code, including mine this semester. Many developers think their role is simply to get the code to pass all the tests (green ticks). However, I argue that a good approach to agent-driven development is for the developer to maintain the "theory" behind the program, in Peter Naur's sense, by watching each test fail for the right reason before trusting it. An agent may cause tests to pass without knowing why they exist.
+
+Naur argues that "programming properly should be regarded as an activity by which the programmers form or achieve a certain kind of insight, a theory, of the matters at hand" (Naur, 1985). He also states that "the continued adaption, modification, and correction of errors in them, is essentially dependent on a certain kind of knowledge possessed by a group of programmers who are closely and continuously connected with them." This relates to big programs and human groups. The important part is that the programs are continuously corrected. Who will be closely and continuously connected with the program if an agent writes it? At the start of each session, the agent won't know why things are in place. If Naur is correct, the developer must maintain the theory.
+
+A solution to this issue is Beck's idea of augmented coding (Beck, 2025). Unlike vibe coding, you care about the code and its complexity. You care about the tests and their coverage. Beck uses the tests to guide the agent, which he calls "the genie". The genie is told to "find the next unmarked test in plan.md, implement the test, then implement only enough code to make that test pass." Beck also includes some warning signs to look out for, including "any indication that the genie was cheating, for example by disabling or deleting tests." If the genie can cheat to get the tests to pass, then you cannot trust that they have passed.
+
+Although Naur and Beck are not focusing on the same issue, I argue they work well together. Naur explains where the knowledge of the program lives, and Beck provides an example of how you can work with an agent. The connection between these ideas is the moment a test fails. To know why it has failed, and that it has failed for the right reason, you must understand what the test is protecting. This is the theory. If the test has never failed, then it may be protecting anything or nothing.
+
+The strongest argument against this idea is Goodhart's law: "when a measure becomes a target, it ceases to be a good measure" (Strathern, 1997). For example, in our week 5 lecture, a line in the spec said all pages must link back to home. This could be satisfied by putting a hidden link on each page. If agents are optimising to pass the tests, we may not be able to trust them. Naur appears to support this, as he says "reestablishing the theory of a program merely from the documentation, is strictly impossible", and tests are a form of documentation. Whilst both are correct in saying that the tests are not the theory, this is exactly why you should watch the tests fail. If no one is watching, the target is met and no one asks what meeting it means. In my project, I had two identity tests that were passing when they should have failed, because they were reading an old message rather than the new one they were waiting for. I found this by deliberately breaking the code; I would not have found it from looking at the tests.
+
+This argument does have some limitations. It refers to software that will be changed over time, not one-off scripts. It also refers only to tests, not all forms of review; diffs still matter. It also does not answer whether agents make developers faster. Becker et al. (2025) found in their METR trial that experienced developers believed they were faster but were actually slower. Although this is a different question, it shows that confidence is not evidence. If an agent is writing the code, you should not trust a test that you haven't watched fail. The role of the developer is to be the one watching.
+
+## References
+
+Beck, K. (2025). Augmented coding: Beyond the vibes. *Tidy First?* https://tidyfirst.substack.com/p/augmented-coding-beyond-the-vibes
+
+Becker, J., Rush, N., Barnes, E., & Rein, D. (2025). *Measuring the impact of early-2025 AI on experienced open-source developer productivity*. METR. https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/
+
+COMP4020/8020 Agentic Coding Studio. (2026). *Week 5 lecture: A spec a machine can satisfy*. Australian National University. https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/lectures/week-5/
+
+Naur, P. (1985). Programming as theory building. *Microprocessing and Microprogramming*, 15(5), 253–261.
+
+Strathern, M. (1997). 'Improving ratings': Audit in the British university system. *European Review*, 5(3), 305–321.
