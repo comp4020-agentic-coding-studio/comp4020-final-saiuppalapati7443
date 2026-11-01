@@ -35,10 +35,10 @@ case for CRDTs, and I read it and didn't follow it: in Cairn people only
 ever add new stones, never change an existing one, so there's nothing to
 merge.
 
-Dourish & Bellotti's *Awareness and Coordination in Shared Workspaces*
-(CSCW '92) is why there's no visitor list, no names, no "X is online"
-banner, and why carrying a stone stays on your own screen until it's
-dropped.
+Dourish & Bellotti's [*Awareness and Coordination in Shared
+Workspaces*](https://dl.acm.org/doi/10.1145/143457.143468) (CSCW '92) is why
+there's no visitor list, no names, no "X is online" banner, and why
+carrying a stone stays on your own screen until it's dropped.
 
 ## What I chose not to build
 
