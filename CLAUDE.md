@@ -352,6 +352,43 @@ work today.
   support matrix, a design spec) names specific sizes before picking
   plausible-looking ones — two sizes that happen to produce the same result
   as the real ones is not the same guarantee as testing the real ones.
+- **2026-11-02: `spec/cairn.test.ts`'s ADR 0003 carry test failed once in a
+  full `pnpm check` run, then passed on rerun — and it wasn't a flake,
+  despite looking exactly like one.** Two tests in that file —
+  `"never broadcasts a carry/in-progress drag, only a completed drop (ADR
+  0003)"` and `"B cannot move, edit, or delete A's stone"` — prove a
+  negative: they wait a fixed 300ms, then assert a connection's `queue` is
+  empty, meaning *nothing at all* arrived. That assertion is only honest
+  against a server the test has exclusive use of. Both tests ran against the
+  **shared** app `spec/global-setup.ts` finds — the same app every other
+  `spec/*.test.ts` file (and every other `it()` in `cairn.test.ts` itself)
+  talks to, and the server broadcasts every real drop to *every* open
+  connection, system-wide. An unrelated, completely legitimate drop from
+  some other concurrently-running test landing in that 300ms window makes
+  `queue.length` go from 0 to 1 — identical in every respect to what a real
+  ADR 0003 regression would produce. Confirmed by writing a standalone
+  script that opens the same two connections this test does, fires a carry
+  message, and fires a real drop from a third, unrelated connection partway
+  through the wait window: `b.queue.length` came back `1`, reproducing the
+  exact failure on demand. This is the same bug class
+  `spec/pile-size.test.ts`'s own comment already names and was already fixed
+  for (a `toHaveLength`-style assertion against the shared app, vulnerable
+  to concurrent cross-test broadcasts) — these two tests had the identical
+  exposure and simply hadn't been moved yet. Fixed by extracting both into a
+  new `spec/no-stray-broadcasts.test.ts`, run against its own isolated
+  server (spawned fresh, own `DATA_DIR`, own port), the same pattern
+  `spec/pile-size.test.ts`, `spec/persistence.test.ts`, and
+  `spec/logging.test.ts` already use. Verified with 5 consecutive full-suite
+  runs on a freshly started app, all green (10 files, 28 tests each — same
+  counts as before, since the tests moved rather than changed). Rule: an
+  assertion that something *didn't* happen (a queue is empty, nothing was
+  received, no side effect occurred) is only trustworthy against a server
+  the test doesn't share with anything else — on the shared app, "nothing
+  happened" and "something unrelated happened" are indistinguishable from
+  the queue's own contents, so the test can't tell a real regression from
+  background noise. Before writing an isolated-server test from scratch,
+  also check whether an *existing* test already has this exposure and
+  should move instead of a new one being added next to it.
 
 ## Forgotten web (/forgotten-web/)
 

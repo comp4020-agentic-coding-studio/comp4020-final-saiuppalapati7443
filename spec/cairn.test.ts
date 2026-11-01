@@ -115,34 +115,14 @@ it("delivers a dropped stone to another open session within 1000ms", async () =>
   b.ws.close();
 });
 
-// Protects docs/adr/0003-carry-stays-local.md: carrying a stone must never
-// reach another session as a live broadcast, only a completed drop may. A
-// message shaped like an in-progress carry/position update is dropped the
-// same as any other message type this server doesn't recognise. Checking the
-// queue directly after a wait, rather than racing a fresh listener against a
-// timeout, avoids leaving a stray waiter behind that would steal the next
-// real message out from under the following assertion (the crit-8 race, in
-// reverse).
-it("never broadcasts a carry/in-progress drag, only a completed drop (ADR 0003)", async () => {
-  const a = await connect();
-  const b = await connect();
-  await nextMessage(a);
-  await nextMessage(b);
-
-  a.ws.send(JSON.stringify({ type: "carry", x: 0.5 }));
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  expect(b.queue).toHaveLength(0);
-
-  // Prove the connection is still alive, and that a real drop still works.
-  const validDrop = nextMessage(b);
-  a.ws.send(JSON.stringify({ type: "drop", x:0.33 }));
-  const message = await validDrop;
-  expect(message.type === "stone" && message.stone.x).toBeCloseTo(0.33);
-  expect(a.ws.readyState).toBe(WebSocket.OPEN);
-
-  a.ws.close();
-  b.ws.close();
-});
+// "never broadcasts a carry/in-progress drag, only a completed drop (ADR
+// 0003)" used to live here, checking a queue stayed empty after a wait. That
+// kind of "nothing arrived" assertion isn't safe against this file's shared
+// app — another spec/*.test.ts file's own real drop landing in the wait
+// window looks identical to a real bug. Moved to
+// spec/no-stray-broadcasts.test.ts, against its own isolated server, same
+// reason spec/pile-size.test.ts already gives for the same move. See
+// CLAUDE.md's dated correction.
 
 // Five sessions, two of them dropping at the same instant (no await between
 // the two sends), all converging on the same two new stones in whatever order
@@ -331,45 +311,10 @@ it("each visitor sees the other's stone live, but only their own is marked mine"
   b.ws.close();
 });
 
-// There is no message type for moving, editing, or deleting a stone at all
-// (ADR 0004: nobody may, ever, not even the owner) — so "B cannot move, edit
-// or delete A's stone" is checked by confirming the server ignores anything
-// shaped like an attempt, from anyone, the same way it ignores any other
-// message type it doesn't recognise, and that A's stone is unchanged after.
-it("B cannot move, edit, or delete A's stone — there is no such message to send", async () => {
-  const a = await connect();
-  const b = await connect();
-  await nextMessage(a);
-  await nextMessage(b);
-
-  const aDrops = nextMessage(a);
-  const bSeesADrop = nextMessage(b);
-  a.ws.send(JSON.stringify({ type: "drop", x: 0.5 }));
-  const aStone = await aDrops;
-  await bSeesADrop; // A's own drop also reaches B; drain it before checking B's queue below.
-  if (aStone.type !== "stone") throw new Error("expected a stone broadcast");
-
-  for (const attempt of [
-    { type: "move", id: aStone.stone.id, x: 0.9 },
-    { type: "edit", id: aStone.stone.id, color: "hsl(0, 0%, 0%)" },
-    { type: "delete", id: aStone.stone.id },
-  ]) {
-    b.ws.send(JSON.stringify(attempt));
-  }
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  expect(b.queue, "none of B's attempts should have been broadcast to anyone").toHaveLength(0);
-
-  const check = await connect();
-  const state = await nextMessage(check);
-  if (state.type !== "state") throw new Error("expected initial state");
-  const stillThere = state.stones.find((stone) => stone.id === aStone.stone.id);
-  expect(stillThere?.x).toBeCloseTo(0.5);
-  expect(stillThere?.color).toBe(aStone.stone.color);
-
-  a.ws.close();
-  b.ws.close();
-  check.ws.close();
-});
+// "B cannot move, edit, or delete A's stone" used to live here, with the
+// same "assert a queue stays empty against the shared app" exposure as the
+// carry test above — moved to spec/no-stray-broadcasts.test.ts for the same
+// reason. See CLAUDE.md's dated correction.
 
 it("ignores a forged visitorId, name, mine, or id in the drop body", async () => {
   const a = await connect();
