@@ -2,66 +2,75 @@
 
 Cairn is one shared pile of stones. Open it, drag the stone at the bottom onto
 the pile, and watch it land — for you, and for everyone else looking at the
-same page, at the same moment. There are no accounts, no rooms, no score.
-Just a cairn that a room full of people can build together, one stone at a
-time, and that's still there tomorrow.
+same page, at the same moment.
 
 ## What "good" means here
 
-Good means the four things the brief and crit ask for are true, and checked,
-not just claimed: a stone someone drops is visible on every other open
-session within about a second; what gets dropped survives a restart or
-redeploy; two visitors can tell their stones apart without signing up for
-anything; and who may see and change what is decided by the server, never
-assumed from whatever a client claims. `spec/invariants.test.ts` and
-`spec/cairn.test.ts` enforce this against the running `/ws` protocol:
-broadcast, persistence, malformed input rejected, two cookie jars told apart,
-a tampered cookie never becoming someone else's, a forged `visitorId` or
-`mine` field ignored, and no stone ever movable, editable, or deletable by
-anyone. `spec/logging.test.ts` checks a placement's log line names the
-visitor by pseudonym, never by cookie id. In one sentence: everyone sees
-every stone, only its real owner is told "this is yours," and each visitor
-may place one stone per Canberra day
-(`docs/adr/0004-who-may-see-and-change-what.md`). Whether the *interaction*
-is actually good — satisfying to drop, or reading as "someone's here" rather
-than a notification — isn't something a test can decide. I judged that
-myself, from two browser windows side by side.
+A room of people builds one thing together, and every stone on the pile
+means someone was actually there and chose where to leave it. One stone a
+day makes you think about where to put it, at the cost that clearing
+cookies or switching browsers gets around it. Stones that can never move or
+be deleted mean a cairn you can trust will still hold your stone tomorrow.
+Colour instead of a name means nobody waits at a sign-up box before their
+first stone. Testing the live deployment the way a marker would taught me
+that good isn't proven by green checks — it's proven by checks I've seen go
+red for the right reason.
+
+## Who it's for
+
+Cairn is for a small group in the same place at the same time: a crit pod,
+a room full of people at a showcase. You notice the others through the
+pile itself — a new colour arrives, a stone lands on top of yours.
 
 ## What I read while deciding
 
 Robin Sloan's [*An App Can Be a Home-Cooked
-Meal*](https://www.robinsloan.com/notes/home-cooked-app/) argues for sizing
-software to its real audience instead of defaulting to "professional,
-scalable" infrastructure. Cairn's audience is a crit room, and the brief's
-single 256MB machine agrees with that framing: one Node process, one SQLite
-file, no accounts, nothing extra to operate.
+Meal*](https://www.robinsloan.com/notes/home-cooked-app/) gave me
+permission not to build for scale: Cairn is for a crit room, so I picked
+the smallest stack that works.
 
 Ink & Switch's [*Local-first
-software*](https://www.inkandswitch.com/essay/local-first/) makes a real case
-for CRDTs and offline-capable apps that outlive any one server. I read it and
-didn't follow it: Cairn only ever appends a new stone to a shared pile, which
-never conflicts, so a single authoritative server is simpler than a merge
-algorithm for a problem this app doesn't have. That's a trade-off I'm naming,
-not one I missed.
+software*](https://www.inkandswitch.com/essay/local-first/) makes a real
+case for CRDTs, and I read it and didn't follow it: in Cairn people only
+ever add new stones, never change an existing one, so there's nothing to
+merge.
 
-Dourish & Bellotti's *Awareness and Coordination in Shared Workspaces* (CSCW
-'92) is why there's no visitor list, no names, no "X is online" banner. They
-found that awareness picked up passively through a shared object — rather than
-announced separately from it — lets people move fluidly between paying close
-attention and barely noticing each other. A colored stone landing *is* the
-presence signal here — carrying one toward the pile stays on your own screen,
-so the only thing anyone else sees is a stone actually placed, not a change of
-mind about one; see `docs/adr/0002-visitor-identity.md` and
-`docs/adr/0003-carry-stays-local.md`.
+Dourish & Bellotti's *Awareness and Coordination in Shared Workspaces*
+(CSCW '92) is why there's no visitor list, no names, no "X is online"
+banner, and why carrying a stone stays on your own screen until it's
+dropped.
 
 ## What I chose not to build
 
-No moderation, no way to remove a stone, no multiple rooms, no cap on how
-large the pile can grow, no chosen names, no visible cursors or in-progress
-drags. Each is a real, small feature; none
-of them were needed to make the three required properties true, and each would
-have added a decision — who moderates, what happens once the pile is "too big"
-— that nothing here asked me to make yet. `docs/adr/` has the reasoning behind
-the two decisions that mattered most: the stack, and what counts as a visitor.
+No accounts or names, no moderation, no way to move or delete a stone, no
+multiple rooms, no live cursors or showing a stone while still carried, no
+likes or scores, no cap on the pile. Each one would change what Cairn is.
 
-![Cairn, first version](docs/cairn-first-version.png)
+## Which claims are enforced and which are judged
+
+| Claim | How it's held |
+| --- | --- |
+| `/` and `/readme/` render, and link back | `invariants.test.ts` |
+| Broadcasts within ~1s; no cap on pile size | `cairn.test.ts`, `pile-size.test.ts` |
+| Carry stays local; only drops broadcast | `cairn.test.ts` |
+| Survives a restart or redeploy | `persistence.test.ts` |
+| Told apart by server cookie, never what the browser sends | `cairn.test.ts` |
+| Bad input dropped silently, no crash | `cairn.test.ts` |
+| Stones never move, edit, or delete | `cairn.test.ts` |
+| One stone per Canberra day | `cairn.test.ts`, `canberra-date.test.ts` |
+| Logs use pseudonym, never cookie id | `logging.test.ts` |
+| Same pile at every viewport | `pile-layout.browser.test.ts` |
+| Clean "Reconnecting…", no duplicate stones | `connection-status.browser.test.ts`, `reconnect.browser.test.ts` |
+| Feels satisfying to drop | Judged: by me, two browser windows side by side |
+| Reads as "someone's here" | Judged: by me, two browser windows side by side |
+| Works the way a marker uses it | Judged: live marker pass, `docs/testing/final-marker-pass.md` |
+| No rooms, no moderation | Judged: deliberate absence |
+
+![Cairn, stones stacked into a real pile](docs/screenshots/after-stacking-1920.png)
+
+## What's still rough
+
+- One stone a day is tied to a cookie, so clearing cookies gets around it.
+- Colour is the only way to tell people apart, and some colours look alike.
+- Enter/Space always drops the stone in the middle of the pile.
+- Cairn assumes one machine; running two would show people different piles.
