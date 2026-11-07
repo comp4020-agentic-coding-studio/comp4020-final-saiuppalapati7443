@@ -373,11 +373,22 @@ it("gives a tampered cookie a brand-new identity, never someone else's", async (
   // visitor's stone, but never as its own.
   expect(seenByTampered.stone.mine).toBe(false);
 
-  const tamperedDrops = nextMessage(tampered);
+  const tamperedSeesOwnDrop = nextMessage(tampered);
+  const realSeesTamperedDrop = nextMessage(real);
   tampered.ws.send(JSON.stringify({ type: "drop", x: 0.7 }));
-  const tamperedStone = await tamperedDrops;
-  if (tamperedStone.type !== "stone") throw new Error("expected a stone broadcast");
-  expect(tamperedStone.stone.color).not.toBe(realStone.stone.color);
+  const [tamperedStone, seenByReal] = await Promise.all([tamperedSeesOwnDrop, realSeesTamperedDrop]);
+  if (tamperedStone.type !== "stone" || seenByReal.type !== "stone") {
+    throw new Error("expected stone broadcasts");
+  }
+  // The tampered visitor is a genuinely distinct identity, checked both
+  // ways: it sees its own drop as mine, and the real visitor never sees
+  // tampered's stone as mine. `mine` is computed from identity, not hashed
+  // into a small space — unlike comparing colors (colorFor() hashes into
+  // only 360 hues, so two different ids collide on color about 1 time in
+  // 360), this can't coincidentally pass.
+  expect(seenByReal.stone.id).toBe(tamperedStone.stone.id);
+  expect(tamperedStone.stone.mine, "tampered must see its own drop as mine").toBe(true);
+  expect(seenByReal.stone.mine, "the real visitor must never see tampered's stone as mine").toBe(false);
 
   real.ws.close();
   tampered.ws.close();

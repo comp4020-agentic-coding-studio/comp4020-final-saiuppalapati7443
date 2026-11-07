@@ -477,6 +477,16 @@ work today.
   still serve a 200 and still contain the right words, so the existing
   content checks can't catch it; re-check `/readme/` on the live site after
   every README structure change, not just after a content change.
+- **2026-11-07: `spec/cairn.test.ts`'s tampered-cookie test proved distinct
+  identity by comparing `colorFor()`'s output, which hashes into only 360
+  hues — a ~1-in-360 chance of coincidentally passing even when the server
+  hands a tampered cookie someone else's real identity. Rewrote it to assert
+  `mine` from both visitors' own perspective on the same stone id instead,
+  confirmed it still fails (not a timeout, a real assertion) when
+  `resolveVisitor()` is deliberately made to let a tampered cookie reuse an
+  existing identity. Rule: never let a test's pass/fail hinge on two
+  independent random values landing in different buckets of a small space —
+  assert the actual property (here, `mine`) directly.
 
 ## Forgotten web (/forgotten-web/)
 
