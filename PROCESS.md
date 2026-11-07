@@ -1,116 +1,133 @@
 # Process overview
 
-This describes Cairn as it stands at the week 10 crit ("Fly by instruments").
-Like the last two weeks, it's rewritten, not appended to; the `/ship` tags
-keep each version.
+This describes Cairn as it stands at final submission — rewritten, not
+appended to, same as every earlier week; the `/ship` tags keep each version.
 
 ## Where it stands
 
-Cairn is deployed at
+Cairn is one shared pile of stones, deployed at
 [comp4020-final-saiuppalapati7443.fly.dev](https://comp4020-final-saiuppalapati7443.fly.dev).
-A visitor drops a stone, it lands for everyone with the page open, and it
-survives a restart or redeploy because the sqlite file at
-`${DATA_DIR}/cairn.db` is the only place state lives. What's new this week is
-the other half of a multi-user app: not just that people share state, but
-that the server — not either client — decides who may see and change it, and
-says so out loud in a log a human can read.
+You drag a stone onto the pile, or press Enter, and it lands for everyone
+with the page open within about a second. Each visitor is an anonymous
+cookie with a colour, gets one stone per Canberra day, and nobody can ever
+move or delete a stone. The three things the brief asks for are all checked
+by tests against the running app: real-time (a drop reaches other sessions
+in under a second), multi-user (the server tells people apart by a cookie
+it sets, never by anything the browser sends), and persistent (stones
+survive a restart and a redeploy). The pile now actually stacks, looks the
+same on a phone and a desktop, and still loads quickly with a thousand
+stones.
 
-## The stack, and the workflow case for it
+## The stack, and why it paid off
 
-Unchanged since week 9: Node 24 runs `.ts` source directly, `node:sqlite` is
-the only store, `ws` is the one runtime dependency, and there's no build
-step anywhere — `node src/server.ts` is the entire run command, locally and
-in the image. That shape kept paying off this week in a way worth naming:
-adding real identity enforcement meant one new module
-(`src/identity.ts`) and one schema migration, not a framework swap or a new
-service. A small stack with few moving parts is cheap to extend carefully
-instead of rebuilding around a new requirement.
+Node 24 runs my TypeScript files directly, so there's no build step:
+`node src/server.ts` is the whole run command, locally and in the Docker
+image, so what I test is exactly what deploys
+([`71f6f21`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/71f6f21e4bc1cb5a4fbdc7be1db4f880bc05ad8d)).
+`node:sqlite` is built in, so there's no database server to run, just one
+file on the Fly volume. `ws` is my only dependency, chosen over server-sent
+events or polling because stones go both ways: the browser sends a drop,
+the server sends it to everyone.
 
-## This week's decision
+This paid off when I had to change things late: adding cookie identity in
+crit 10 meant a new module and a schema migration, not a framework swap or
+a new service
+([`3ab01fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/3ab01fa5084f3139191db0dafaafc7669ddd1ea6)),
+and the final performance fix only touched client-side code, never the
+server
+([`90752cb`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/90752cbfc8f2ef9c79e7fb79c9f50a9a3888d5f7)).
+The cost was writing things a framework would give me, like my own markdown
+renderer for `/readme/`, which had a real bug — it re-rendered markdown
+inside code spans — that ended up in CLAUDE.md. And it only works on one
+machine.
 
-The crit specified the decision directly, not left it to me to pick between
-options: identity comes only from a server-set cookie, never a value a
-client sends; everyone sees every stone, but only the owner is ever told
-"this is yours"; one stone per visitor per Canberra day; and no stone may
-ever be moved, edited, or deleted, by anyone, including its own owner. My
-job was to write the reasoning down properly — including the options that
-were genuinely considered and rejected, like binding identity to a
-connection instead of a cookie — and then make the server actually hold to
-it. That's [ADR 0004](docs/adr/0004-who-may-see-and-change-what.md)
-([`420ac2c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/420ac2cdf09a97083bedb210e608c0e87a2db4f6)).
-It amends ADR 0002's identity transport (client-generated id in the message
-body → server-set cookie) while keeping ADR 0002's anonymity decision
-untouched: still just a hue, still no accounts, still no PII.
+On the workflow: I ran the agent through a fixed list of prompts, one per
+session, each ending the same way — `pnpm check` and `pnpm check:evidence`,
+commit, push, watch CI deploy. I asked for a failing check first, then the
+fix, then a deliberate break to prove the check catches it. I checked the
+agent's reports myself, and stopped it when it called a failure a "flake,"
+twice, both times a real bug — and checked what it wrote about my own
+process too: an early reflection draft described events from a different
+project, and it once discarded a half-finished change without asking.
 
-## Where I directed the work
+## Verifying before trusting green
 
-I worked through the crit's six steps in the order given: ground first and
-write the decision down, enforce it on the server and prove it with tests,
-add logs and fix the page for a newcomer, deploy and rehearse against the
-live site, then write up and ship. The calls that were actually mine: asking
-before any push to `main`, since that's a shared and visible action, not
-something to do by default; choosing to strengthen the "forged visitorId"
-test after it passed against a deliberately broken server without catching
-the break — the first version of that test only checked what a different
-visitor saw, not what the real dropper saw, so it missed the exact bug it
-was meant to catch; and deciding that a crib-sheet claim ("the app tells
-visitors apart") wasn't ready to write until I'd seen it hold on the live
-site, not just in a local test run.
+At the start, a passing test meant done. By the end, I don't trust a check
+until I've seen it fail for the right reason — a green suite, or a "flaky"
+test, kept turning out to hide a real problem. Each time, the fix went into
+`CLAUDE.md` or `spec/` as a rule, so the agent can't repeat it.
 
-## Grounding
+The clearest case was `spec/logging.test.ts`. Two attempts both added
+timeouts around the problem without finding it: replacing a fixed sleep with
+a polling wait still failed in CI
+([`fdfef52`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/fdfef521d605a2b3372c795d39f8ee26a9fd580f)),
+and guarding every wait in the file still failed in CI after that
+([`34a244e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/34a244e2a72be467cf99e4e9adb705acab326fa8)).
+Both were retries until it passed — exactly what the "confirm it holds,
+don't just make it pass" rule exists to stop. Reading CI's actual error on
+the second failure, not just rerunning, found the real cause: a listener
+attached after an `await`, the same message-arrives-before-anyone's-
+listening race `CLAUDE.md` already warned about elsewhere. The fix used the
+existing message-queue pattern instead of a bigger timeout, and the same bug
+was found and fixed in `spec/persistence.test.ts` before it ever failed
+there too
+([`cc0e055`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/cc0e055677494cddf9724a351ab1b4685acddde2)).
 
-Every claim this week was checked against a running app, not assumed from
-reading the code. The identity rules were proven with a deliberate-break
-exercise: the server was changed to trust a client-claimed `visitorId`, the
-new test went red exactly as expected, the change was reverted, and `git
-diff` showed nothing left behind
-([`3ab01fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/3ab01fa5084f3139191db0dafaafc7669ddd1ea6)).
-The logging claims were checked against a server's actual stdout, captured
-by spawning an isolated instance, not inferred from the code that writes the
-log lines
-([`b877baa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/b877baa8eccdc3ae8bd2fe6ba70f86342c74254c)).
-The newcomer-clarity fixes were checked against real screenshots of the
-running page at 390×844 and 1280×800, not a description of what the markup
-should look like
-([`0e7829c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/0e7829c48ebe2a119656097b41db81aa1c5de8df)).
-After deploying, CI's `check` and `deploy` jobs both passed, the full spec
-ran again with `APP_URL` pointed at the live `fly.dev` URL (18 of 18 passing),
-and the crit's actual rehearsal scenario was run against the live site —
-two separate WebSocket sessions, two separate cookies, while `flyctl logs`
-was tailed live — confirming two visitors read as distinct pseudonyms, a
-second drop in one day was refused, and an attempt to edit another visitor's
-stone was refused and correctly named the real owner
-([`2f3c05e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/2f3c05e88326601e0d2eeb1cd0fcd5f6e2ee402f)).
+The same pattern showed up elsewhere: a carry-stays-local test proved
+"nothing arrived" while sharing a server with every other running test,
+fixed with its own isolated server
+([`b9ee9a5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/b9ee9a53781592e6c2a8b5088a47070817515a0a));
+a slowdown I blamed on my own large local database was really
+`recomputeStacking()` running on every stone landed, an `O(n³)` cost on page
+load
+([`90752cb`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/90752cbfc8f2ef9c79e7fb79c9f50a9a3888d5f7));
+and the missing link from `/readme/` back to the app was found only by
+testing the live deployment, not by reading the code
+([`03954e2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/03954e2d3c945f8135195e244b32e71fca90254f)).
 
-## Correcting
+## The two decisions
 
-Two real bugs were found and fixed this week, each logged as a rule in
-`CLAUDE.md` rather than patched quietly:
+**Carry stays local** ([ADR 0003](docs/adr/0003-carry-stays-local.md),
+[`67668c6`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/67668c630de8c862577a406d41185c5da945cab0)):
+while you're dragging your stone, nobody else sees it; they only see it once
+you drop it. Cairn is about the stone you choose to leave, not watching
+people hesitate — at the cost of some live co-presence, which my pod argued
+for at crit 9.
 
-- **`ws`'s `"headers"` event fires inside `handleUpgrade`, before its own
-  callback runs, not after.** The cookie-setting code for `/ws` first
-  registered its listener inside the `handleUpgrade` callback, by analogy
-  with how the connection handler itself is wired up. That's one tick too
-  late — the library emits `"headers"` synchronously before the callback
-  ever runs — so the `Set-Cookie` header silently never went out on a
-  WebSocket upgrade. Caught by writing a standalone script that inspected
-  the real upgrade response, not by a failing spec test
-  ([`3ab01fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/3ab01fa5084f3139191db0dafaafc7669ddd1ea6)).
-- **Two new identity tests raced a stale queued message**, one level deeper
-  than the message-queue race `spec/cairn.test.ts` already guards against:
-  one checked a queue length without first draining a legitimate broadcast
-  that arrived first, the other called `nextMessage()` without draining a
-  connection's initial `state` push, so it read that instead of the
-  broadcast it meant to wait for. Both were caught by the deliberate-break
-  exercise itself — one test went green when the server was broken and
-  should have gone red — not by inspecting the test code first
-  ([`3ab01fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/3ab01fa5084f3139191db0dafaafc7669ddd1ea6)).
+**Who may see and change what**
+([ADR 0004](docs/adr/0004-who-may-see-and-change-what.md),
+[`420ac2c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/420ac2cdf09a97083bedb210e608c0e87a2db4f6)):
+the server decides who you are from a cookie it sets, never from anything
+the browser sends. Everyone sees every stone, but only you are told which
+ones are yours, you get one stone per Canberra day, and nobody, not even
+you, can move or delete a stone — a rule only counts if the server enforces
+it, otherwise anyone could pretend to be someone else or remove someone's
+stone.
 
-## What I'm watching for in week 11
+## What I read, and where I departed
 
-The keyboard gap flagged last week is closed — the carry stone now has a
-real focus ring and an Enter/Space path. What's still open: the one-stone-
-a-day limit resets on cleared cookies or a new browser, which is accepted
-as a known property of anonymous identity, not a bug, but it's worth
-watching whether that becomes a real complaint once more than a handful of
-people actually use the app at once.
+I agree with Sloan that software can be made for a small group you know —
+Cairn is for one room, on the smallest stack that works. I agree with
+Dourish and Bellotti that people should notice each other through the
+shared thing, not a list of who's online. Where I depart: I read Ink &
+Switch's local-first argument and chose not to follow it — Cairn only ever
+adds stones, so there's nothing to merge, and one server is simpler. And
+the home-cooked idea suggests you can skip testing because it's just for
+friends; I went the other way, because the agent writes the code, so the
+checks are how I know it does what I meant.
+
+## What's still rough
+
+The test suite takes over a minute and needs Chrome installed for the
+browser tests. Several tests now need their own isolated server to be
+trustworthy — slower, but honest. Colour is the only way to tell people
+apart, which isn't great for colourblind visitors, and keyboard users still
+can't choose where their stone lands.
+
+## Looking back
+
+The agent wrote almost all of the code. My part was deciding what Cairn
+should and shouldn't do, writing that into the README, CLAUDE.md, and the
+tests, and refusing to accept "it passed" or "it's a flake" without knowing
+why. The biggest change: I now treat every green check as a claim that
+needs evidence.
