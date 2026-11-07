@@ -6,6 +6,8 @@ const pile = document.getElementById("pile");
 const countEl = document.getElementById("count");
 const carryStone = document.getElementById("carry-stone");
 const carryHint = document.getElementById("carry-hint");
+const dropMarker = document.getElementById("drop-marker");
+const dropAnnouncer = document.getElementById("drop-position-announcer");
 
 // Keyed by id so a reconnect's "state" push (laptop sleep, network blip,
 // server restart — client.js's own "close" handler reconnects automatically)
@@ -205,7 +207,8 @@ function markDisconnected() {
 function onConnected() {
   carryStone.removeAttribute("aria-disabled");
   carryStone.tabIndex = 0;
-  carryHint.textContent = "Drag onto the pile above, or press Enter / Space";
+  carryHint.textContent =
+    "Drag onto the pile above, or focus and use the arrow keys, then Enter / Space";
 }
 
 // Creates and stacks one stone (DOM element + world position), but doesn't
@@ -332,12 +335,18 @@ function connect() {
 
 let socket = connect();
 
-function drop(clientX) {
-  const rect = cairn.getBoundingClientRect();
-  const x = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+// x is already a 0..1 fraction of #cairn's own width — both callers (the
+// pointer path below, and the keyboard path further down) convert their own
+// coordinate space into that fraction before calling this.
+function dropAt(x) {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: "drop", x }));
   }
+}
+
+function dropAtClientX(clientX) {
+  const rect = cairn.getBoundingClientRect();
+  dropAt(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)));
 }
 
 // Pointer Events cover mouse and touch alike: carry (pointerdown + move),
@@ -371,15 +380,49 @@ carryStone.addEventListener("pointerup", (event) => {
     event.clientX <= rect.right &&
     event.clientY >= rect.top &&
     event.clientY <= rect.bottom;
-  if (inside) drop(event.clientX);
+  if (inside) dropAtClientX(event.clientX);
 });
 
-// Keyboard parity for the drag: there's no cursor position to carry to, so
-// Enter/Space drops at the cairn's horizontal centre — a fixed, predictable
-// spot rather than guessing at one.
+// --- Keyboard drop ------------------------------------------------------
+//
+// There's no cursor position for a keyboard user to carry to, so Left/Right
+// moves a visible marker instead — starting centred, in 5% steps (20% with
+// Shift), clamped to the pile's edges. Enter/Space drops at the marker's
+// current position, giving a keyboard-only visitor the same choice of where
+// to land a stone that a mouse or touch drag already has.
+const ARROW_STEP = 0.05;
+const ARROW_STEP_SHIFT = 0.2;
+let markerX = 0.5;
+
+function renderMarker() {
+  dropMarker.style.left = `${markerX * 100}%`;
+}
+
+function showMarker() {
+  markerX = 0.5;
+  renderMarker();
+  dropMarker.hidden = false;
+  dropAnnouncer.textContent = "Drop position: 50% across";
+}
+
+function hideMarker() {
+  dropMarker.hidden = true;
+}
+
+carryStone.addEventListener("focus", showMarker);
+carryStone.addEventListener("blur", hideMarker);
+
 carryStone.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    const step = event.shiftKey ? ARROW_STEP_SHIFT : ARROW_STEP;
+    const delta = event.key === "ArrowRight" ? step : -step;
+    markerX = Math.min(1, Math.max(0, markerX + delta));
+    renderMarker();
+    dropAnnouncer.textContent = `Drop position: ${Math.round(markerX * 100)}% across`;
+    return;
+  }
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
-  const rect = cairn.getBoundingClientRect();
-  drop(rect.left + rect.width / 2);
+  dropAt(markerX);
 });

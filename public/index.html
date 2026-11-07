@@ -21,16 +21,20 @@
     <main>
       <div id="cairn" aria-label="the shared cairn">
         <div id="pile"></div>
+        <div id="drop-marker" hidden></div>
       </div>
       <div id="carry-zone">
         <div
           id="carry-stone"
           role="button"
           tabindex="0"
-          aria-label="Drag this stone onto the cairn above, or press Enter or Space to drop it"
-          title="Drag me onto the cairn, or press Enter / Space"
+          aria-label="Drag this stone onto the cairn above, or focus it and use the Left/Right arrow keys then Enter or Space to choose where it drops"
+          title="Drag me onto the cairn, or use the arrow keys then Enter / Space"
         ></div>
-        <p id="carry-hint">Drag onto the pile above, or press Enter / Space</p>
+        <p id="carry-hint">
+          Drag onto the pile above, or focus and use the arrow keys, then Enter / Space
+        </p>
+        <p id="drop-position-announcer" aria-live="polite" class="sr-only"></p>
       </div>
     </main>
     <p id="count">Loading the cairn…</p>

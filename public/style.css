@@ -106,6 +106,47 @@ main {
   outline-offset: 1px;
 }
 
+/* Where a keyboard-only drop would land — only ever shown while #carry-stone
+   has focus (client.js toggles the [hidden] attribute), never during a
+   mouse/touch drag, which has its own cursor position instead. Sized and
+   coloured to read clearly at both marking viewports (390x844, 1920x1080):
+   a fixed rem width scales the same way #carry-stone already does, and the
+   dashed outline keeps it visually distinct from a landed .stone even when
+   it overlaps one. */
+#drop-marker {
+  position: absolute;
+  bottom: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: -0.75rem;
+  border-radius: 50%;
+  border: 2px dashed #2a6fdb;
+  background: rgba(42, 111, 219, 0.15);
+  pointer-events: none;
+  transition: left 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #drop-marker {
+    transition: none;
+  }
+}
+
+/* Visually hidden but still reachable by screen readers — the live region
+   client.js updates on every arrow-key press, without adding a second
+   visible readout next to #carry-hint. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 #carry-zone {
   display: flex;
   flex-direction: column;
