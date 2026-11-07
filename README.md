@@ -6,21 +6,19 @@ same page, at the same moment.
 
 ## What "good" means here
 
-A room of people builds one thing together, and every stone on the pile
-means someone was actually there and chose where to leave it. One stone a
-day makes you think about where to put it, at the cost that clearing
-cookies or switching browsers gets around it. Stones that can never move or
-be deleted mean a cairn you can trust will still hold your stone tomorrow.
-Colour instead of a name means nobody waits at a sign-up box before their
-first stone. Testing the live deployment the way a marker would taught me
-that good isn't proven by green checks — it's proven by checks I've seen go
-red for the right reason.
+A room of people builds one thing together: every stone means someone was
+there and chose where to leave it. One stone a day makes you think about
+placement — clearing cookies or switching browsers bypasses that. Stones
+that never move or delete mean a cairn you can trust to hold your stone
+tomorrow. Colour not a name means no sign-up before your first stone.
+Testing live as a marker would taught me good isn't proven by green checks,
+only by checks gone red for the right reason.
 
 ## Who it's for
 
-Cairn is for a small group in the same place at the same time: a crit pod,
-a room full of people at a showcase. You notice the others through the
-pile itself — a new colour arrives, a stone lands on top of yours.
+Cairn is for a small group, one place, one time: a crit pod, a showcase.
+You notice others through the pile — a new colour, a stone landing on top
+of yours.
 
 ## What I read while deciding
 
