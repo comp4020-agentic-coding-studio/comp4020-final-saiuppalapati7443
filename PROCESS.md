@@ -23,7 +23,7 @@ stones.
 Node 24 runs my TypeScript files directly, so there's no build step:
 `node src/server.ts` is the whole run command, locally and in the Docker
 image, so what I test is exactly what deploys
-([`71f6f21`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/71f6f21e4bc1cb5a4fbdc7be1db4f880bc05ad8d)).
+([`4ccb591`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/4ccb591f5aa8d4136109ae54777fa23ed3f644e6)).
 `node:sqlite` is built in, so there's no database server to run, just one
 file on the Fly volume. `ws` is my only dependency, chosen over server-sent
 events or polling because stones go both ways: the browser sends a drop,
