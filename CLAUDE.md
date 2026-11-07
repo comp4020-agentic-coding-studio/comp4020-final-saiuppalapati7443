@@ -487,6 +487,9 @@ work today.
   existing identity. Rule: never let a test's pass/fail hinge on two
   independent random values landing in different buckets of a small space —
   assert the actual property (here, `mine`) directly.
+- **2026-11-08: keyboard users could only drop in the centre.** Rule: every
+  pointer interaction needs a keyboard equivalent with the same choice, not a
+  reduced one.
 
 ## Forgotten web (/forgotten-web/)
 

@@ -128,8 +128,7 @@ checks are how I know it does what I meant.
 The test suite takes over a minute and needs Chrome installed for the
 browser tests. Several tests now need their own isolated server to be
 trustworthy — slower, but honest. Colour is the only way to tell people
-apart, which isn't great for colourblind visitors, and keyboard users still
-can't choose where their stone lands.
+apart, which isn't great for colourblind visitors.
 
 ## Looking back
 

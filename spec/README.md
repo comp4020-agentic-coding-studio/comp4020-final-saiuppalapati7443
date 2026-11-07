@@ -62,6 +62,7 @@ being true.
 | A visitor sees a plain "Reconnecting…" status, and the carry stone is disabled, for as long as the connection is actually down | `connection-status.browser.test.ts` — "shows a plain disconnected status and disables the carry stone while the connection is down, then recovers" |
 | A refused drop (the daily limit) is shown to the visitor who tried it, not silently dropped | `connection-status.browser.test.ts` — "sends an explicit refusal message when the server rejects a drop, instead of silently dropping it" |
 | A reconnect never duplicates a stone already drawn in the page itself | `reconnect.browser.test.ts` — "shows exactly one .stone element per stone after a reconnect, never a duplicate" (a real browser test: the WS-level reconnect test above only checks what the server *sends*, never what the page *draws*) |
+| A keyboard-only visitor can choose where their stone lands, not just drop at a fixed centre | `keyboard-drop.browser.test.ts` — "lets a keyboard-only visitor move the drop marker right of centre with ArrowRight", "lets a different keyboard-only visitor move the drop marker left of centre with ArrowLeft" |
 
 ## What's judged by people, and how
 

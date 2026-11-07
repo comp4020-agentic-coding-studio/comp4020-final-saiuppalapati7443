@@ -61,6 +61,7 @@ likes or scores, no cap on the pile. Each one would change what Cairn is.
 | Reads as "someone's here" | Judged: by me, two browser windows side by side |
 | Works the way a marker uses it | Judged: live marker pass, `docs/testing/final-marker-pass.md` |
 | No rooms, no moderation | Judged: deliberate absence |
+| Keyboard users choose where their stone lands | `keyboard-drop.browser.test.ts` |
 
 ![Cairn, stones stacked into a real pile](docs/screenshots/after-stacking-1920.png)
 
@@ -68,5 +69,4 @@ likes or scores, no cap on the pile. Each one would change what Cairn is.
 
 - One stone a day is tied to a cookie, so clearing cookies gets around it.
 - Colour is the only way to tell people apart, and some colours look alike.
-- Enter/Space always drops the stone in the middle of the pile.
 - Cairn assumes one machine; running two would show people different piles.
