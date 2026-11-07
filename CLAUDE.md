@@ -451,6 +451,32 @@ work today.
   per call as the cost of correctness; an append-only input usually lets
   the common case amortise down to linear, with the full recompute kept
   only as a fallback for whatever case breaks the append assumption.
+- **2026-11-07: README.md gained a table and the renderer was never tested
+  against it.** `src/readme.ts`'s renderer only ever handled headings,
+  paragraphs, bold/italic, links, images, and `-`/`*` lists — it had no table
+  support at all. README's "Which claims are enforced and which are judged"
+  section is a markdown table, added during the final-submission rewrite
+  (`9586c94`), but nothing re-ran `/readme/` against the live site after that
+  change, so the table's `|` syntax fell through to the paragraph branch and
+  the live page showed one garbled line of literal pipes instead of rows —
+  found by a marker-style audit reading the deployed `/readme/` directly, not
+  by any existing test, since `spec/invariants.test.ts`'s heading check can't
+  tell a real `<table>` from a paragraph that happens to contain the same
+  words. Fixed by adding a failing test first
+  (`spec/invariants.test.ts`'s "renders README's claims table as a real table
+  on /readme/", which counts real `<tr>` elements against the markdown
+  source's own row count), confirmed red against the unmodified renderer,
+  then adding minimal GitHub-style table support to `renderMarkdown()`: a
+  line containing `|` followed by a separator line (`| --- | --- |`) opens a
+  `<table>`, cells run through the same `renderInline()` as a paragraph (so
+  code spans and links work inside a cell), and the table closes on the first
+  line that isn't itself a row. Confirmed green after the fix. Rule: a
+  structural element (a table, same as a heading or a list) added to
+  README.md needs the renderer checked against it specifically — a renderer
+  that silently falls back to treating unknown syntax as plain text will
+  still serve a 200 and still contain the right words, so the existing
+  content checks can't catch it; re-check `/readme/` on the live site after
+  every README structure change, not just after a content change.
 
 ## Forgotten web (/forgotten-web/)
 

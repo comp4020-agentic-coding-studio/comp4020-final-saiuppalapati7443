@@ -1,7 +1,8 @@
 // A hand-written renderer for exactly the markdown this app's README uses:
-// headings, paragraphs, bold/italic, links, images, and `-`/`*` lists. Not a
-// general CommonMark implementation — see docs/adr/0001-stack.md for why
-// that's the deliberate trade-off instead of a markdown dependency.
+// headings, paragraphs, bold/italic, links, images, `-`/`*` lists, and
+// GitHub-style tables. Not a general CommonMark implementation — see
+// docs/adr/0001-stack.md for why that's the deliberate trade-off instead of a
+// markdown dependency.
 
 function escapeHtml(text: string): string {
   return text
@@ -47,6 +48,22 @@ function renderInline(text: string): string {
   return out;
 }
 
+// A GitHub-style table row: `| cell | cell |` (outer pipes optional). Splits
+// on unescaped `|` and trims each cell; inline rendering (code, links, etc.)
+// runs per cell later, the same as it does for a paragraph.
+function tableCells(row: string): string[] {
+  const trimmed = row.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+// The separator row (`| --- | --- |`) is what marks the line above it as a
+// table header rather than an ordinary paragraph line — each cell is only
+// dashes, optionally with `:` alignment markers.
+function isTableSeparator(line: string): boolean {
+  if (!line.trim().includes("|")) return false;
+  return tableCells(line).every((cell) => /^:?-+:?$/.test(cell));
+}
+
 export function renderMarkdown(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
@@ -66,9 +83,11 @@ export function renderMarkdown(markdown: string): string {
     }
   };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const heading = line.match(/^(#{1,6})\s+(.*?)\s*$/);
     const listItem = line.match(/^[-*]\s+(.*)$/);
+    const nextLine = lines[i + 1];
 
     if (line.trim() === "") {
       flushParagraph();
@@ -80,6 +99,25 @@ export function renderMarkdown(markdown: string): string {
       closeList();
       const level = heading[1].length;
       html.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
+      continue;
+    }
+    if (line.trim().includes("|") && nextLine !== undefined && isTableSeparator(nextLine)) {
+      flushParagraph();
+      closeList();
+      const headerCells = tableCells(line);
+      html.push("<table>");
+      html.push(
+        `<thead><tr>${headerCells.map((cell) => `<th>${renderInline(cell)}</th>`).join("")}</tr></thead>`,
+      );
+      html.push("<tbody>");
+      i += 1; // consume the separator row
+      while (i + 1 < lines.length && lines[i + 1].trim().includes("|") && lines[i + 1].trim() !== "") {
+        i += 1;
+        const bodyCells = tableCells(lines[i]);
+        html.push(`<tr>${bodyCells.map((cell) => `<td>${renderInline(cell)}</td>`).join("")}</tr>`);
+      }
+      html.push("</tbody>");
+      html.push("</table>");
       continue;
     }
     if (listItem) {

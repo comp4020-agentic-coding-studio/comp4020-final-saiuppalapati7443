@@ -75,3 +75,32 @@ it("links back to the app from /readme/", async () => {
     `/readme/ has no link back to the app; links found: ${JSON.stringify(links)}`,
   ).toBe(true);
 });
+
+// README.md's "Which claims are enforced and which are judged" section is a
+// markdown table. If the renderer has no table support, this content still
+// shows up as text (so "publishes README.md" above stays green) but as one
+// garbled paragraph of literal `|` characters instead of an actual <table> —
+// a marker reading /readme/ sees pipes, not rows. This counts real <tr>s
+// against the real row count in README.md's own table, so a renderer with no
+// table support (0 <tr> elements) fails here even though the heading-only
+// check above can't see the difference.
+it("renders README's claims table as a real table on /readme/", async () => {
+  const markdown = readFileSync("README.md", "utf8");
+  const tableLines = markdown
+    .split(/\r?\n/)
+    .filter((line) => line.trim().startsWith("|"));
+  expect(tableLines.length, "README.md has no markdown table to check /readme/ against").toBeGreaterThan(2);
+  // header + separator + body rows in the markdown source; the separator row
+  // (`| --- | --- |`) renders nothing, so the real table has one fewer <tr>.
+  const expectedRows = tableLines.length - 1;
+
+  const res = await fetch(new URL("/readme/", baseUrl));
+  const html = await res.text();
+  const dom = new JSDOM(html);
+  const table = dom.window.document.querySelector("table");
+  expect(table, "/readme/ has no <table> element at all").not.toBeNull();
+  const rows = table?.querySelectorAll("tr") ?? [];
+  expect(rows.length, `/readme/'s table has ${rows.length} row(s), expected ${expectedRows}`).toBe(
+    expectedRows,
+  );
+});
