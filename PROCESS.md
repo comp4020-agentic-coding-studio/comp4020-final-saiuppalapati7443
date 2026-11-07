@@ -29,26 +29,30 @@ file on the Fly volume. `ws` is my only dependency, chosen over server-sent
 events or polling because stones go both ways: the browser sends a drop,
 the server sends it to everyone.
 
-This paid off when I had to change things late: adding cookie identity in
-crit 10 meant a new module and a schema migration, not a framework swap or
-a new service
+This paid off when I had to change things late: cookie identity in crit 10
+meant a new module and a schema migration, not a framework swap or a new
+service
 ([`3ab01fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/3ab01fa5084f3139191db0dafaafc7669ddd1ea6)),
 and the final performance fix only touched client-side code, never the
 server
 ([`90752cb`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/90752cbfc8f2ef9c79e7fb79c9f50a9a3888d5f7)).
-The cost was writing things a framework would give me, like my own markdown
-renderer for `/readme/`, which had a real bug — it re-rendered markdown
-inside code spans — that ended up in CLAUDE.md. And it only works on one
-machine.
+The cost was writing things a framework would give me, like a markdown
+renderer for `/readme/` with a real bug — it re-rendered markdown inside
+code spans
+([`4ccb591`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/4ccb591f5aa8d4136109ae54777fa23ed3f644e6))
+— recorded in CLAUDE.md. It only works on one machine.
 
 On the workflow: I ran the agent through a fixed list of prompts, one per
-session, each ending the same way — `pnpm check` and `pnpm check:evidence`,
+session, ending the same way — `pnpm check` and `pnpm check:evidence`,
 commit, push, watch CI deploy. I asked for a failing check first, then the
 fix, then a deliberate break to prove the check catches it. I checked the
 agent's reports myself, and stopped it when it called a failure a "flake,"
-twice, both times a real bug — and checked what it wrote about my own
-process too: an early reflection draft described events from a different
-project, and it once discarded a half-finished change without asking.
+twice, both times a real bug
+([`b9ee9a5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/b9ee9a53781592e6c2a8b5088a47070817515a0a),
+[`90752cb`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/90752cbfc8f2ef9c79e7fb79c9f50a9a3888d5f7))
+— and checked what it wrote about my process too: an early reflection draft
+described events from a different project
+([reflections/crit-8.md](reflections/crit-8.md)).
 
 ## Verifying before trusting green
 
@@ -81,9 +85,12 @@ a slowdown I blamed on my own large local database was really
 `recomputeStacking()` running on every stone landed, an `O(n³)` cost on page
 load
 ([`90752cb`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/90752cbfc8f2ef9c79e7fb79c9f50a9a3888d5f7));
-and the missing link from `/readme/` back to the app was found only by
+the missing link from `/readme/` back to the app was found only by
 testing the live deployment, not by reading the code
-([`03954e2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/03954e2d3c945f8135195e244b32e71fca90254f)).
+([`03954e2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/03954e2d3c945f8135195e244b32e71fca90254f));
+and the same page's claims table, added later, rendered as garbled pipes
+instead of a table — again only caught by reading the live `/readme/`
+([`ab7e019`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/ab7e01945c754045e048e4e1767ab0614a71d5c4)).
 
 ## The two decisions
 
@@ -91,8 +98,8 @@ testing the live deployment, not by reading the code
 [`67668c6`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-saiuppalapati7443/commit/67668c630de8c862577a406d41185c5da945cab0)):
 while you're dragging your stone, nobody else sees it; they only see it once
 you drop it. Cairn is about the stone you choose to leave, not watching
-people hesitate — at the cost of some live co-presence, which my pod argued
-for at crit 9.
+people hesitate — at the cost of live co-presence, the strongest case my pod
+could make, recorded in ADR 0003.
 
 **Who may see and change what**
 ([ADR 0004](docs/adr/0004-who-may-see-and-change-what.md),
