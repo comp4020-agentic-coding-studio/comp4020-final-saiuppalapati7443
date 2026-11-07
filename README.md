@@ -8,11 +8,9 @@ same page, at the same moment.
 
 A room of people builds one thing together: every stone means someone was
 there and chose where to leave it. One stone a day makes you think about
-placement — clearing cookies or switching browsers bypasses that. Stones
-that never move or delete mean a cairn you can trust to hold your stone
-tomorrow. Colour not a name means no sign-up before your first stone.
-Testing live as a marker would taught me good isn't proven by green checks,
-only by checks gone red for the right reason.
+placement. Stones that never move or delete mean a cairn you can trust to
+hold your stone tomorrow. A colour instead of a name means no sign-up
+before your first stone.
 
 ## Who it's for
 
